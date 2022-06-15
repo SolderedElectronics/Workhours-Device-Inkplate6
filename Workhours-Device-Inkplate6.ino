@@ -72,7 +72,7 @@ void setup()
     {
         errorDisplay();
         display.partialUpdate(0, 1);
-        //while (1);
+        while (1);
     }
 
     if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
@@ -190,6 +190,7 @@ void loop()
         }
         change_needed = 0;
     }
+
     prev_hours = display.rtcGetHour();
     prev_minutes = display.rtcGetMinute();
 
@@ -376,7 +377,6 @@ void logScan(uint32_t _tagID)
                 {
                     sprintf(fileName, "%c%d%c%d%c%s%c%s%s", '/', display.rtcGetMonth(), '_', display.rtcGetYear() - 2000, '_',
                             curr_worker->lname, '_', curr_worker->name, ".csv");
-                    Serial.println(fileName);
                     if (!(sd).exists(fileName))
                     {
                         file.open(fileName, FILE_WRITE);
@@ -392,12 +392,23 @@ void logScan(uint32_t _tagID)
                     struct tm t;
                     gmtime_r(&read_epoch, &t);
 
-                    if ((temp_epoch - read_epoch) > MAX_SHIFT_LASTING)
+                    if (((temp_epoch - read_epoch) > MAX_SHIFT_LASTING) || (display.rtcGetDay() != t.tm_mday))
                     {
-                        sprintf(temp, "%.2d%c%.2d%c%.2d%c%.2d%c%c%c%c%c%c%c%c%c", display.rtcGetDay(), '.', display.rtcGetMonth(),
+                        sprintf(temp, "%.2d%c%.2d%c%.2d%c%.2d%c%c%c%c%c%c%c%c%c", t.tm_mday, '.', t.tm_mon,
                                 ';', t.tm_hour, ':', t.tm_min, ';', '?', ':', '?', ';',
                                 '?', ':', '?', '\n');
-                        logout(0, 0);
+
+                        file.print(temp);
+                        file.close();
+                        sprintf(fileName, "%s_%s.txt", curr_worker->name, curr_worker->lname);
+                        sd.remove(fileName);
+                        file.open(fileName, FILE_WRITE);
+                        Serial.println(fileName);
+                        char to_write[48];
+                        sprintf(to_write, "%d %d", display.rtcGetEpoch(), 1);
+                        file.print(to_write);
+                        file.close();
+                        login();
                     }
 
                     else
@@ -543,7 +554,7 @@ void fetchTime()
 //Display screens
 
 void login()
-{   
+{
     // Code for login screen
     buzz(1);
     display.setTextSize(1);
@@ -564,14 +575,14 @@ void login()
     change_needed = 1;
     login_screen_shown = 1;
     Serial.print("Image drawn: ");
-    if(!(display.drawImage(curr_worker->image, 250, 20, 1, 0)))
+    if (!(display.drawImage(curr_worker->image, 250, 20, 1, 0)))
     {
         display.drawImage("Normalna_slika.bmp", 250, 20, 1, 0);
     }
 }
 
 void logout(uint8_t hours, uint8_t minutes)
-{   
+{
     // Code for logout screen
     buzz(1);
     display.setTextSize(1);
@@ -598,7 +609,7 @@ void logout(uint8_t hours, uint8_t minutes)
     log_shown = millis();
     change_needed = 1;
     login_screen_shown = 1;
-    if(!(display.drawImage(curr_worker->image, 250, 20, 1, 0)))
+    if (!(display.drawImage(curr_worker->image, 250, 20, 1, 0)))
     {
         display.drawImage("Normalna_slika.bmp", 250, 20, 1, 0);
     }
@@ -615,7 +626,7 @@ void alreadyLogged()
     change_needed = 1;
     login_screen_shown = 1;
     log_shown = millis();
-    
+
 }
 
 void unknownTag(uint32_t _tagID)
@@ -646,15 +657,15 @@ void errorDisplay()
 
 void buzz(uint8_t n)
 {
-  Serial.println("Buzz");
-  for(int i = 0; i < n; i++)
-  {
-      Serial.println("For");
-      display.digitalWriteMCP(0, HIGH);
-      delay(100);
-      display.digitalWriteMCP(0, LOW);
-      delay(100);
-  }
+    Serial.println("Buzz");
+    for (int i = 0; i < n; i++)
+    {
+        Serial.println("For");
+        display.digitalWriteMCP(0, HIGH);
+        delay(100);
+        display.digitalWriteMCP(0, LOW);
+        delay(100);
+    }
 }
 
 void doServer(WiFiClient * client)
@@ -1085,29 +1096,36 @@ void doServer(WiFiClient * client)
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
-
-        if ((sd).begin(15, SD_SCK_MHZ(25)))
+        if (strstr(buffer, "="))
         {
-            File dir;
-            File tempFile;
-            char strTemp[56];
-            dir.open("/");
-            while (tempFile.openNext(&dir, O_RDONLY)) {
-                memset(strTemp, 0, 56 * sizeof(char));
-                tempFile.getName(strTemp, 56);
-                if (strstr(strTemp, ".csv")) {
-                    client->print(F("        <a href='/download/"));
-                    client->print(strTemp);
-                    client->print(F("' style='color:#582C83;margin-bottom:30px;'>"));
-                    client->print(strTemp);
-                    client->println(F("</a></br>"));
+            char *wname = strstr(buffer, "=") + 1;
+            strstr(wname, " ") != 0 ? *(strstr(wname, " ")) = '\0' : 0;
+
+            if ((sd).begin(15, SD_SCK_MHZ(25)))
+            {
+                File dir;
+                File tempFile;
+                char strTemp[56];
+                dir.open("/");
+                while (tempFile.openNext(&dir, O_RDONLY)) {
+                    memset(strTemp, 0, 56 * sizeof(char));
+                    tempFile.getName(strTemp, 56);
+                    Serial.println(strTemp);
+                    if (strstr(strTemp, ".csv") && strstr(strTemp, wname)) {
+                        client->print(F("        <a href='/download/"));
+                        client->print(strTemp);
+                        client->print(F("' style='color:#582C83;margin-bottom:30px;'>"));
+                        client->print(strTemp);
+                        client->println(F("</a></br>"));
+                    }
+                    tempFile.close();
                 }
-                tempFile.close();
+                dir.close();
             }
-            dir.close();
         }
 
-        client->println("         <a href=\"/\"> <button>Back</button> </a>");
+        client->println("        <a href=\"/\"> <button>Home</button> </a>");
+        client->println("        <a href=\"/monthly\"> <button>Back</button> </a>");
         client->println("      </div>");
         client->println("    </div>");
         client->println("  </div>");
@@ -1140,17 +1158,28 @@ void doServer(WiFiClient * client)
         client->println("            <label for=\"worker\">Choose worker:</label>");
         client->println("            <select name=\"worker\" id=\"worker\">");
         curr_worker = workers;
-        while (curr_worker != NULL)
+        if (curr_worker == NULL)
         {
-            char tmp[86];
-            sprintf(tmp, "               <option value=\"%s_%s\">%s %s</option>", curr_worker->name, curr_worker->lname, curr_worker->name, curr_worker->lname);
-            client->println(tmp);
-            curr_worker = curr_worker->next;
+            client->println("               <option value=\"0\">No workers yet!</option>");
+            client->println("            </select>");
+            client->println("            <br>");
+            client->println("        </form>");
         }
-        client->println("            </select>");
-        client->println("            <input type =\"submit\" value =\"Select\">");
-        client->println("         <a href=\"/\"> <button>Back</button> </a>");
-        client->println("        </form>");
+        else
+        {
+            while (curr_worker != NULL)
+            {
+                char tmp[86];
+                sprintf(tmp, "               <option value=\"%s_%s\">%s %s</option>", curr_worker->lname, curr_worker->name, curr_worker->name, curr_worker->lname);
+                client->println(tmp);
+                curr_worker = curr_worker->next;
+            }
+            client->println("            </select>");
+            client->println("            <br>");
+            client->println("            <input type =\"submit\" value =\"Select\">");
+            client->println("        </form>");
+        }
+        client->println("        <a href=\"/\"> <button>Back</button> </a>");
         client->println("      </div>");
         client->println("    </div>");
         client->println("  </div>");
@@ -1242,21 +1271,21 @@ void doServer(WiFiClient * client)
             tempFile.getName(strTemp, 64);
             if (strstr(strTemp, wanted))
             {
-              file.open(strTemp, O_RDONLY);
-               strstr(strTemp, wanted) = '\0';
-               strstr(strTemp, "_") = ' ';
-               strstr(strTemp, "_") = ' ';
-              client->write(strTemp, strlen(strTemp));
-              client->write('\n');
-              char *ps = (char*)ps_malloc(10000);
-              memset(ps, 0, 10000 * sizeof(char));
-              file.read(ps, 10000);
-              //Serial.println(ps);
-              file.close();
-              client->write(ps, strlen(ps));
-              free(ps);
-              client->write('\n');
-              client->write('\n');
+            file.open(strTemp, O_RDONLY);
+             strstr(strTemp, wanted) = '\0';
+             strstr(strTemp, "_") = ' ';
+             strstr(strTemp, "_") = ' ';
+            client->write(strTemp, strlen(strTemp));
+            client->write('\n');
+            char *ps = (char*)ps_malloc(10000);
+            memset(ps, 0, 10000 * sizeof(char));
+            file.read(ps, 10000);
+            //Serial.println(ps);
+            file.close();
+            client->write(ps, strlen(ps));
+            free(ps);
+            client->write('\n');
+            client->write('\n');
             }
             tempFile.close();
             }
@@ -1281,7 +1310,7 @@ void doServer(WiFiClient * client)
             i++;
         }
         wanted[i] = '\0';
-
+        Serial.println(wanted);
         if ((sd).begin(15, SD_SCK_MHZ(25)))
         {
             File dir;
@@ -1294,11 +1323,11 @@ void doServer(WiFiClient * client)
                 tempFile.getName(strTemp, 64);
                 if (strstr(strTemp, wanted))
                 {
+                    char *pointerName = strTemp + 5;
                     file.open(strTemp, O_RDONLY);
-                    *strstr(strTemp, wanted) = '\0';
-                    *strstr(strTemp, "_") = ' ';
-                    *strstr(strTemp, "_") = ' ';
-                    client->write(strTemp, strlen(strTemp));
+                    *strstr(pointerName, "_") = ' ';
+                    *strstr(pointerName, ".") = '\0';
+                    client->write(pointerName, strlen(pointerName));
                     client->write('\n');
                     char *ps = (char*)ps_malloc(10000);
                     memset(ps, 0, 10000 * sizeof(char));
@@ -1316,6 +1345,7 @@ void doServer(WiFiClient * client)
         }
 
     }
+
     else if (strstr(buffer, "/byworker"))
     {
         client->println("HTTP/1.1 200 OK");

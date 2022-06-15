@@ -58,7 +58,7 @@ struct worker *curr_worker = NULL;
 void setup()
 {
     Serial.begin(115200);
-    Serial2.begin(57600, SERIAL_8N1, 39, -1);
+    Serial2.begin(57600, SERIAL_8N1, 39, -1); // Software Serial for RFID
     display.begin();        // Init Inkplate library (you should call this function ONLY ONCE)
     display.clearDisplay(); // Clear frame buffer of display
     display.display();      // Put clear image on display
@@ -124,20 +124,20 @@ void setup()
 
 void loop()
 {
-    if (WiFi.status() == WL_CONNECTED)
+    if (WiFi.status() == WL_CONNECTED) // Check if connection with WiFi is lost
     {
-        WiFiClient client = server.available();
+        WiFiClient client = server.available(); // Check if there are active requests from clients
         if (client.available())
         {
-            doServer(&client);
+            doServer(&client); // Call function to do server things
         }
     }
     else
     {
-        WiFi.reconnect();
+        WiFi.reconnect(); // If connection to Wi Fi is lost then reconnect
         Serial.println("Reconnecting");
     }
-    if (Serial2.available())
+    if (Serial2.available()) // Check if tag is scanned
     {
         memset(buffer, 0, 8 * sizeof(uint8_t));
         last_scan = millis();
@@ -155,29 +155,29 @@ void loop()
             tagID *= 10;
             tagID += (buffer[i] - 48);
         }
-        logScan(tagID);
+        logScan(tagID,0);
         Serial.println(tagID);
     }
 
-    display.rtcGetRtcData();
+    display.rtcGetRtcData(); // Get RTC data
 
-    if (log_shown + LOG_SCREEN_TIME < millis() || millis() < LOG_SCREEN_TIME)
+    if (log_shown + LOG_SCREEN_TIME < millis() || millis() < LOG_SCREEN_TIME) //If login/logout screen is shown
     {
-        display.clearDisplay();
-        if (prev_minutes != display.rtcGetMinute())
+        display.clearDisplay(); // Clear screen
+        if (prev_minutes != display.rtcGetMinute()) // If minutes changed, change is needed
         {
             change_needed = 1;
-            mainDraw();
+            mainDraw(); // Draw main screen
         }
-        else if (login_screen_shown)
+        else if (login_screen_shown) // If login screen is shown but should not be shown change is needed
         {
             login_screen_shown = 0;
             change_needed = 1;
-            mainDraw();
+            mainDraw(); // Draw main screen
         }
     }
 
-    if (change_needed)
+    if (change_needed) // If change is needed, refresh screen
     {
         if (refreshes > 40000)
         {
@@ -194,7 +194,7 @@ void loop()
     prev_hours = display.rtcGetHour();
     prev_minutes = display.rtcGetMinute();
 
-    if (prev_hours == 23 && display.rtcGetHour() == 0)
+    if (prev_hours == 23 && display.rtcGetHour() == 0) // If midnight, call function checkDaily and get time
     {
         checkDaily();
         fetchTime();
@@ -321,7 +321,7 @@ void loadWorkersFromSD()
     Serial.println("Done!");
 }
 
-void logScan(uint32_t _tagID)
+void logScan(uint32_t _tagID,bool daily)
 {
     curr_worker = workers;
     while (curr_worker != NULL)
@@ -405,10 +405,16 @@ void logScan(uint32_t _tagID)
                         file.open(fileName, FILE_WRITE);
                         Serial.println(fileName);
                         char to_write[48];
-                        sprintf(to_write, "%d %d", display.rtcGetEpoch(), 1);
+                        if(daily)
+                            sprintf(to_write, "%d %d", display.rtcGetEpoch(), 0);
+                        else
+                            sprintf(to_write, "%d %d", display.rtcGetEpoch(), 1);
+                        Serial.println(to_write);
+                        Serial.println(daily);
                         file.print(to_write);
                         file.close();
                         login();
+                        return;
                     }
 
                     else
@@ -486,7 +492,7 @@ void checkDaily()
             tempFile.close();
             if (log_type)
             {
-                logScan(curr_worker->ID);
+                logScan(curr_worker->ID,1);
                 Serial.println("Dislogged!");
             }
         }
@@ -1160,7 +1166,7 @@ void doServer(WiFiClient * client)
         curr_worker = workers;
         if (curr_worker == NULL)
         {
-            client->println("               <option value=\"0\">No workers yet!</option>");
+            client->println("               <option value=\"0\" selected=\"selected\" hidden=\"hidden\">No workers yet!</option>");
             client->println("            </select>");
             client->println("            <br>");
             client->println("        </form>");
@@ -1228,7 +1234,9 @@ void doServer(WiFiClient * client)
         client->println("        <form action=\"/byworker/\" method=\"GET\">");
         client->println("          <p>");
         client->println("            <label for=\"month\">Choose month:</label>");
-        client->println("            <select name=\"month\" id=\"month\">");
+        client->print("            <select name=\"month\" id=\"month\" value=\"");
+        client->print(display.rtcGetMonth());
+        client->println("\">"); 
         client->println("               <option value=\"1\">1</option>");
         client->println("               <option value=\"2\">2</option>");
         client->println("               <option value=\"3\">3</option>");
@@ -1244,7 +1252,7 @@ void doServer(WiFiClient * client)
         client->println("            </select>");
         client->println("            <br>");
         client->println("            <label for=\"year\">Year: </label>");
-        client->println("            <input type=\"text\" id=\"year\" name=\"year\">");
+        client->println("            <input type=\"text\" id=\"year\" name=\"year\" value=\"2022\">");
         client->println("            <br>");
         client->println("            <input type =\"submit\" value =\"Get\">");
         client->println("        </form>");
@@ -1367,11 +1375,12 @@ void doServer(WiFiClient * client)
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
-
         client->println("        <form action=\"/byworker/\" method=\"GET\">");
         client->println("          <p>");
         client->println("            <label for=\"month\">Choose month:</label>");
-        client->println("            <select name=\"month\" id=\"month\">");
+        client->print("            <select name=\"month\" id=\"month\" value=\"");
+        client->print(display.rtcGetMonth());
+        client->println("\">"); 
         client->println("               <option value=\"1\">1</option>");
         client->println("               <option value=\"2\">2</option>");
         client->println("               <option value=\"3\">3</option>");
@@ -1387,7 +1396,7 @@ void doServer(WiFiClient * client)
         client->println("            </select>");
         client->println("            <br>");
         client->println("            <label for=\"year\">Year: </label>");
-        client->println("            <input type=\"text\" id=\"year\" name=\"year\">");
+        client->println("            <input type=\"text\" id=\"year\" name=\"year\" value=\"2022\">");
         client->println("            <br>");
         client->println("            <input type =\"submit\" value =\"Get\">");
         client->println("        </form>");

@@ -567,7 +567,7 @@ void login()
     display.setFont(&Inter16pt7b);
     display.setCursor(250, 360);
     display.clearDisplay();
-    display.print("Name:  ");
+    display.print("First name:  ");
     display.print(curr_worker->name);
     display.setCursor(250, 400);
     display.print("Last name:  ");
@@ -575,7 +575,7 @@ void login()
     display.setCursor(250, 440);
     display.print("ID:  ");
     display.print(curr_worker->ID);
-    display.setCursor(250, 480);
+    display.setCursor(250, 530);
     display.print("LOGIN");
     log_shown = millis();
     change_needed = 1;
@@ -603,9 +603,9 @@ void logout(uint8_t hours, uint8_t minutes)
     display.setCursor(250, 440);
     display.print("ID:  ");
     display.print(curr_worker->ID);
-    display.setCursor(250, 480);
+    display.setCursor(250, 530);
     display.print("LOGOUT");
-    display.setCursor(250, 520);
+    display.setCursor(250, 570);
     display.print("Worked: ");
     hours < 10 ? display.print("0") : 0;
     display.print(hours);
@@ -625,9 +625,12 @@ void alreadyLogged()
 {
     buzz(1);
     display.clearDisplay();
-    display.setTextSize(1);
+    display.setTextSize(3);
     display.setFont(&Inter16pt7b);
-    display.setCursor(50, 50);
+    display.setCursor(280, 100);
+    display.print("No can't do");
+    display.setTextSize(1);
+    display.setCursor(50, 500);
     display.print("You already scanned your tag in last 10 minutes!");
     change_needed = 1;
     login_screen_shown = 1;
@@ -656,7 +659,7 @@ void errorDisplay()
     display.setFont(&Inter16pt7b);
     display.setCursor(0, 30);
     display.clearDisplay();
-    display.print("Error occured. No SD card inserted. Please insert SD Card. If you don't have SD card, please contact admin.");
+    display.print("Error occured. No SD card inserted. Please insert SD Card. If you don't have SD card, please contact gazda.");
     display.display();
     log_shown = millis();
 }
@@ -668,9 +671,9 @@ void buzz(uint8_t n)
     {
         Serial.println("For");
         display.digitalWriteMCP(0, HIGH);
-        delay(100);
+        delay(150);
         display.digitalWriteMCP(0, LOW);
-        delay(100);
+        delay(150);
     }
 }
 
@@ -991,7 +994,7 @@ void doServer(WiFiClient * client)
         client->println("      <div class=\"card\">");
         client->println("        <form action=\"/addworker/\" method=\"GET\">");
         client->println("          <p>");
-        client->println("            <label for=\"name\">Name</label>");
+        client->println("            <label for=\"name\">Fist name</label>");
         client->println("            <input type=\"text\" id =\"name\" name=\"name\"><br>");
         client->println("            <label for=\"lname\">Last Name</label>");
         client->println("            <input type=\"text\" id =\"lname\" name=\"lname\"><br>");

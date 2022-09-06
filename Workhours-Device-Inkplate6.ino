@@ -1,5 +1,6 @@
 #include <ArduinoJson.h>
 #include <time.h>
+#include <sys\time.h>
 #include "Inkplate.h"            //Include Inkplate library to the sketch
 #include "SdFat.h"
 #include "include/Inter16pt7b.h"
@@ -8,6 +9,11 @@
 #include "include/mainUI.h"
 #include "esp_wifi.h"
 #include "favicon.h"
+
+#include "logging.h"
+#include "linkedList.h"
+#include "dataTypes.h"
+#include "helpers.h"
 
 #define DEBOUNCE_SCAN 1000 // Miliseconds
 #define LOG_SCREEN_TIME 10000 // Miliseconds
@@ -18,16 +24,22 @@ Inkplate display(INKPLATE_1BIT); // Create an object on Inkplate library and als
 StaticJsonDocument<30000> doc; // Buffer for JSON document
 WiFiServer server(80);
 
+
+LinkedList myList;
+Logging logger;
+
 uint32_t refreshes = 0;
 time_t read_epoch;
 // Set your Static IP address
-IPAddress local_IP(192, 168, 71, 152);  // IP address should be set to desired address
+IPAddress local_IP(192, 168, 1, 250);  // IP address should be set to desired address
 // Set your Gateway IP address
-IPAddress gateway(192, 168, 71, 1);   // Gateway address should match IP address
+IPAddress gateway(192, 168, 1, 1);   // Gateway address should match IP address
 
-IPAddress subnet(255, 255, 0, 0);
+IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);   //optional
 IPAddress secondaryDNS(8, 8, 4, 4); //optional
+
+const char *DOWStr[] = {"SUN", "MON", "TUE", "WEN", "THU", "FRI", "SAT"};
 
 char ssid[] = "";
 char pass[] = "";
@@ -44,13 +56,13 @@ const char mon_name[12][4] = {
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
 
-struct worker {
-    char name[20];
-    char lname[20];
-    char image[128];
-    uint32_t ID;
-    struct worker *next;
-};
+//struct worker {
+//    char name[20];
+//    char lname[20];
+//    char image[128];
+//    uint32_t ID;
+//   struct worker *next;
+//};
 
 struct worker *workers = NULL;
 struct worker *curr_worker = NULL;
@@ -115,9 +127,10 @@ void setup()
 
     fetchTime();
 
-    display.setTextColor(BLACK, WHITE);
+    // Initialize library for logging functions. Send address of the SdFat object and Linked List object as parameters (needed by the library).
+    logger.begin(&sd, &myList, &display);
 
-    loadWorkersFromSD();
+    display.setTextColor(BLACK, WHITE);
 
     change_needed = 1;
 }
@@ -139,24 +152,18 @@ void loop()
     }
     if (Serial2.available()) // Check if tag is scanned
     {
-        memset(buffer, 0, 8 * sizeof(uint8_t));
-        last_scan = millis();
-        uint8_t cnt = 0;
-        while (Serial2.available() && Serial2.peek() != '\r')
+            // Get data from RFID reader and conver it into integer (Tag data is sent as ASCII coded numbers).
+        uint64_t tag = logger.getTagID();
+
+        // If the tag is successfully read, check if there is employee with that tag.
+        display.rtcGetRtcData();
+        int result = logger.addLog(tag, display.rtcGetEpoch());
+
+        if (result == LOGGING_TAG_10MIN) alreadyLogged(tag);
+        if (result == LOGGING_TAG_LOGOUT)
         {
-            buffer[cnt] = Serial2.read();
-            cnt++;
+            logout(logger.getEmployeeWeekHours(tag, (int32_t)display.rtcGetEpoch()));
         }
-        while (Serial2.available())
-            Serial2.read();
-        tagID = 0;
-        for (int i = 0; i < cnt; i++)
-        {
-            tagID *= 10;
-            tagID += (buffer[i] - 48);
-        }
-        logScan(tagID,0);
-        Serial.println(tagID);
     }
 
     display.rtcGetRtcData(); // Get RTC data
@@ -202,39 +209,9 @@ void loop()
 
 }
 
-void saveWorkersToSD()
-{
-    Serial.println("Save workers!");
-    if (sd.begin(15, SD_SCK_MHZ(10)))
-    {
-        if (sd.exists("/workers.txt"))
-        {
-            //Serial.print("Removed");
-            Serial.println(sd.remove("/workers.txt"));
-        }
-        File file;
-        Serial.println(file.open("/workers.txt", FILE_WRITE));
-        char temp[128];
-        curr_worker = workers;
-        while (curr_worker != NULL)
-        {
-            Serial.println("Iterate");
-            sprintf(temp, "; %s %s %d %s \r\n", curr_worker->name, curr_worker->lname, curr_worker->ID, curr_worker->image);
-            Serial.println(temp);
-            file.write(temp);
-            Serial.println((int)curr_worker);
-            curr_worker = curr_worker->next;
-        }
-        file.close();
-    }
-    else
-    {
-        //Serial.println("SD not inited!");
-    }
-}
-
 void removeAllWorkers()
 {
+    return;
     Serial.println("Remove workers");
     while (workers != NULL)
     {
@@ -247,82 +224,9 @@ void removeAllWorkers()
     curr_worker = NULL;
 }
 
-void loadWorkersFromSD()
+void logScan(uint32_t _tagID, bool daily)
 {
-    Serial.println("Load workers");
-    removeAllWorkers();
-    if ((sd).begin(15, SD_SCK_MHZ(10)))
-    {
-        File file;
-        if (file.open("/workers.txt", FILE_READ));
-        {
-            if (file.available())
-            {
-                char *temp = (char*)ps_malloc(10000);
-                file.read(temp, 10000);
-                uint16_t cnt = 0;
-                char *nextWorker = temp, *end = strstr(temp, "\0");
-                struct worker *last = NULL;
-                while (nextWorker != NULL)
-                {
-                    last = curr_worker;
-                    if (workers == NULL)
-                    {
-                        workers = (struct worker*)ps_malloc(1 * sizeof(struct worker));
-                        curr_worker = workers;
-                        curr_worker->next = NULL;
-                    }
-                    else
-                    {
-                        curr_worker->next = (struct worker*)ps_malloc(1 * sizeof(struct worker));
-                        curr_worker = curr_worker->next;
-                    }
-                    int i = 0;
-                    char l[20], n[20];
-                    if (sscanf(nextWorker, "; %s %s %d %s", curr_worker->name, curr_worker->lname, &(curr_worker->ID), curr_worker->image) == 4)
-                    {
-                        //Serial.print("Worker found with ID");
-                        //Serial.println(curr_worker->ID);
-                        curr_worker->next = NULL;
-                    }
-                    else
-                    {
-                        free(curr_worker); // KRITIK
-                        curr_worker = last;
-                    }
-                    nextWorker = strstr(nextWorker + 1, ";");
-
-                }
-                file.close();
-                free(temp);
-            }
-            else
-            {
-                //Serial.println("File not available!");
-            }
-            file.close();
-        }
-        /*  else
-            {
-            Serial.println("No workers.txt file!");
-            }*/
-    }
-    else
-    {
-        //Serial.println("No SD Card!");
-    }
-    curr_worker = workers;
-    Serial.println("Print next addresses:");
-    while (curr_worker != NULL)
-    {
-        Serial.println((int)curr_worker->next);
-        curr_worker = curr_worker->next;
-    }
-    Serial.println("Done!");
-}
-
-void logScan(uint32_t _tagID,bool daily)
-{
+    return;
     curr_worker = workers;
     while (curr_worker != NULL)
     {
@@ -338,141 +242,166 @@ void logScan(uint32_t _tagID,bool daily)
 
     if (curr_worker != NULL)
     {
-        File file;
-        display.rtcGetRtcData();
-        char fileName[48];
-        sprintf(fileName, "%s_%s.txt", curr_worker->name, curr_worker->lname);
+        char _filename[50];
+        sprintf(_filename, "%s_%s_internal.csv", curr_worker->name, curr_worker->lname);
         if (sd.begin(15, SD_SCK_MHZ(10)))
         {
-            //time_t read_epoch;
-            uint8_t log_type;
-            if (!sd.exists(fileName))
+            File file;
+            struct tm myTime;
+            display.rtcGetRtcData();
+            int32_t _epoch = display.rtcGetEpoch();
+            
+            myTime.tm_isdst = 0;
+            memcpy(&myTime, localtime((const time_t*)&(_epoch)), sizeof(myTime));
+            
+            if (file.open(_filename, FILE_WRITE))
             {
-                file.open(fileName, FILE_WRITE);
-                char to_write[48];
-                sprintf(to_write, "%d %d ", display.rtcGetEpoch(), 1);
-                read_epoch = display.rtcGetEpoch();
-                log_type = 1;
-                file.print(to_write);
+                char oneRow[400];
+                sprintf(oneRow, "%s; %02d.%02d.%04d; %02d:%02d:%02d; %ld;\r\n", DOWStr[myTime.tm_wday], myTime.tm_mday, myTime.tm_mon + 1, myTime.tm_year + 1900, myTime.tm_hour, myTime.tm_min, myTime.tm_sec, _epoch);
+                file.print(oneRow);
                 file.close();
-                login();
-                return;
-            }
 
-            else
-            {
-                file.open(fileName, FILE_READ);
-                char to_write[48];
-                file.read(to_write, 48);
-                Serial.println(to_write);
-                sscanf(to_write, "%d %d ", &read_epoch, &log_type);
-                file.close();
-            }
-
-            time_t temp_epoch = display.rtcGetEpoch();
-
-            if ((read_epoch + TIMEOUT_AT_LOGGING) < temp_epoch)
-            {
-                if (log_type)
-                {
-                    sprintf(fileName, "%c%d%c%d%c%s%c%s%s", '/', display.rtcGetMonth(), '_', display.rtcGetYear() - 2000, '_',
-                            curr_worker->lname, '_', curr_worker->name, ".csv");
-                    if (!(sd).exists(fileName))
-                    {
-                        file.open(fileName, FILE_WRITE);
-                        char header[] = "Datum;Ulazak;Izlazak;Provedeno\n";
-                        file.print(header);
-                    }
-                    else
-                    {
-                        file.open(fileName, FILE_WRITE);
-                    }
-
-                    char temp[40];
-                    struct tm t;
-                    gmtime_r(&read_epoch, &t);
-
-                    if (((temp_epoch - read_epoch) > MAX_SHIFT_LASTING) || (display.rtcGetDay() != t.tm_mday))
-                    {
-                        sprintf(temp, "%.2d%c%.2d%c%.2d%c%.2d%c%c%c%c%c%c%c%c%c", t.tm_mday, '.', t.tm_mon,
-                                ';', t.tm_hour, ':', t.tm_min, ';', '?', ':', '?', ';',
-                                '?', ':', '?', '\n');
-
-                        file.print(temp);
-                        file.close();
-                        sprintf(fileName, "%s_%s.txt", curr_worker->name, curr_worker->lname);
-                        sd.remove(fileName);
-                        file.open(fileName, FILE_WRITE);
-                        Serial.println(fileName);
-                        char to_write[48];
-                        if(daily)
-                            sprintf(to_write, "%d %d", display.rtcGetEpoch(), 0);
-                        else
-                            sprintf(to_write, "%d %d", display.rtcGetEpoch(), 1);
-                        Serial.println(to_write);
-                        Serial.println(daily);
-                        file.print(to_write);
-                        file.close();
-                        login();
-                        return;
-                    }
-
-                    else
-                    {
-                        uint8_t hours, minutes;
-                        hours = display.rtcGetHour() - t.tm_hour;
-
-                        if (display.rtcGetMinute() >= t.tm_min)
-                        {
-                            minutes = display.rtcGetMinute() - t.tm_min;
-                        }
-
-                        else
-                        {
-                            minutes = 60 - t.tm_min + display.rtcGetMinute();
-                            hours--;
-                        }
-
-                        sprintf(temp, "%.2d%c%.2d%c%.2d%c%.2d%c%.2d%c%.2d%c%.2d%c%.2d%c", display.rtcGetDay(), '.', display.rtcGetMonth(),
-                                ';', t.tm_hour, ':', t.tm_min, ';', display.rtcGetHour(), ':', display.rtcGetMinute(), ';',
-                                hours, ':', minutes, '\n');
-                        logout(hours, minutes);
-                    }
-                    Serial.println(temp);
-                    file.print(temp);
-                    file.close();
-
-                    sprintf(fileName, "%s_%s.txt", curr_worker->name, curr_worker->lname);
-                    sd.remove(fileName);
-                    file.open(fileName, FILE_WRITE);
-                    char to_write[48];
-                    sprintf(to_write, "%d %d", display.rtcGetEpoch(), 0);
-                    file.print(to_write);
-                    file.close();
-                }
-                else
-                {
-                    sprintf(fileName, "%s_%s.txt", curr_worker->name, curr_worker->lname);
-                    sd.remove(fileName);
-                    file.open(fileName, FILE_WRITE);
-                    char to_write[48];
-                    sprintf(to_write, "%d %d", display.rtcGetEpoch(), 1);
-                    file.print(to_write);
-                    file.close();
-                    login();
-                }
-            }
-            else
-            {
-                Serial.println("Already scanned!");
-                alreadyLogged();
+                display.display();
             }
         }
     }
-    else
-    {
-        unknownTag(_tagID);
-    }
+    // if (curr_worker != NULL)
+    // {
+    //     File file;
+    //     display.rtcGetRtcData();
+    //     char fileName[48];
+    //     sprintf(fileName, "%s_%s.txt", curr_worker->name, curr_worker->lname);
+    //     if (sd.begin(15, SD_SCK_MHZ(10)))
+    //     {
+    //         //time_t read_epoch;
+    //         uint8_t log_type;
+    //         if (!sd.exists(fileName))
+    //         {
+    //             file.open(fileName, FILE_WRITE);
+    //             char to_write[48];
+    //             sprintf(to_write, "%d %d ", display.rtcGetEpoch(), 1);
+    //             read_epoch = display.rtcGetEpoch();
+    //             log_type = 1;
+    //             file.print(to_write);
+    //             file.close();
+    //             login();
+    //             return;
+    //         }
+
+    //         else
+    //         {
+    //             file.open(fileName, FILE_READ);
+    //             char to_write[48];
+    //             file.read(to_write, 48);
+    //             Serial.println(to_write);
+    //             sscanf(to_write, "%d %d ", &read_epoch, &log_type);
+    //             file.close();
+    //         }
+
+    //         time_t temp_epoch = display.rtcGetEpoch();
+
+    //         if ((read_epoch + TIMEOUT_AT_LOGGING) < temp_epoch)
+    //         {
+    //             if (log_type)
+    //             {
+    //                 sprintf(fileName, "%c%d%c%d%c%s%c%s%s", '/', display.rtcGetMonth(), '_', display.rtcGetYear() - 2000, '_',
+    //                         curr_worker->lname, '_', curr_worker->name, ".csv");
+    //                 if (!(sd).exists(fileName))
+    //                 {
+    //                     file.open(fileName, FILE_WRITE);
+    //                     char header[] = "DOW;Datum;Ulazak;Izlazak;Provedeno;Prekovremeno\n";
+    //                     file.print(header);
+    //                 }
+    //                 else
+    //                 {
+    //                     file.open(fileName, FILE_WRITE);
+    //                 }
+
+    //                 char temp[40];
+    //                 struct tm t;
+    //                 gmtime_r(&read_epoch, &t);
+
+    //                 if (((temp_epoch - read_epoch) > MAX_SHIFT_LASTING) || (display.rtcGetDay() != t.tm_mday))
+    //                 {
+    //                     sprintf(temp, "%.2d%c%.2d%c%.2d%c%.2d%c%c%c%c%c%c%c%c%c", t.tm_mday, '.', t.tm_mon,
+    //                             ';', t.tm_hour, ':', t.tm_min, ';', '?', ':', '?', ';',
+    //                             '?', ':', '?', '\n');
+
+    //                     file.print(temp);
+    //                     file.close();
+    //                     sprintf(fileName, "%s_%s.txt", curr_worker->name, curr_worker->lname);
+    //                     sd.remove(fileName);
+    //                     file.open(fileName, FILE_WRITE);
+    //                     Serial.println(fileName);
+    //                     char to_write[48];
+    //                     if(daily)
+    //                         sprintf(to_write, "%d %d", display.rtcGetEpoch(), 0);
+    //                     else
+    //                         sprintf(to_write, "%d %d", display.rtcGetEpoch(), 1);
+    //                     Serial.println(to_write);
+    //                     Serial.println(daily);
+    //                     file.print(to_write);
+    //                     file.close();
+    //                     login();
+    //                     return;
+    //                 }
+
+    //                 else
+    //                 {
+    //                     uint8_t hours, minutes;
+    //                     hours = display.rtcGetHour() - t.tm_hour;
+
+    //                     if (display.rtcGetMinute() >= t.tm_min)
+    //                     {
+    //                         minutes = display.rtcGetMinute() - t.tm_min;
+    //                     }
+
+    //                     else
+    //                     {
+    //                         minutes = 60 - t.tm_min + display.rtcGetMinute();
+    //                         hours--;
+    //                     }
+
+    //                     sprintf(temp, "%.2d%c%.2d%c%.2d%c%.2d%c%.2d%c%.2d%c%.2d%c%.2d%c", display.rtcGetDay(), '.', display.rtcGetMonth(),
+    //                             ';', t.tm_hour, ':', t.tm_min, ';', display.rtcGetHour(), ':', display.rtcGetMinute(), ';',
+    //                             hours, ':', minutes, '\n');
+    //                     logout(hours, minutes);
+    //                 }
+    //                 Serial.println(temp);
+    //                 file.print(temp);
+    //                 file.close();
+
+    //                 sprintf(fileName, "%s_%s.txt", curr_worker->name, curr_worker->lname);
+    //                 sd.remove(fileName);
+    //                 file.open(fileName, FILE_WRITE);
+    //                 char to_write[48];
+    //                 sprintf(to_write, "%d %d", display.rtcGetEpoch(), 0);
+    //                 file.print(to_write);
+    //                 file.close();
+    //             }
+    //             else
+    //             {
+    //                 sprintf(fileName, "%s_%s.txt", curr_worker->name, curr_worker->lname);
+    //                 sd.remove(fileName);
+    //                 file.open(fileName, FILE_WRITE);
+    //                 char to_write[48];
+    //                 sprintf(to_write, "%d %d", display.rtcGetEpoch(), 1);
+    //                 file.print(to_write);
+    //                 file.close();
+    //                 login();
+    //             }
+    //         }
+    //         else
+    //         {
+    //             Serial.println("Already scanned!");
+    //             alreadyLogged();
+    //         }
+    //     }
+    // }
+    // else
+    // {
+    //     unknownTag(_tagID);
+    // }
 }
 
 void checkDaily()
@@ -505,8 +434,6 @@ void checkDaily()
 void fetchTime()
 {
     HTTPClient http;
-    http.getStream().setTimeout(10);
-    http.getStream().flush();
     http.begin("https://www.timeapi.io/api/Time/current/zone?timeZone=Europe/Zagreb");
     int httpCode;
     do
@@ -587,7 +514,7 @@ void login()
     }
 }
 
-void logout(uint8_t hours, uint8_t minutes)
+void logout(uint32_t _timeInSeconds)
 {
     // Code for logout screen
     buzz(1);
@@ -595,33 +522,29 @@ void logout(uint8_t hours, uint8_t minutes)
     display.setFont(&Inter16pt7b);
     display.setCursor(250, 360);
     display.clearDisplay();
-    display.print("Name:  ");
-    display.print(curr_worker->name);
-    display.setCursor(250, 400);
-    display.print("Last name:  ");
-    display.print(curr_worker->lname);
-    display.setCursor(250, 440);
-    display.print("ID:  ");
-    display.print(curr_worker->ID);
-    display.setCursor(250, 530);
-    display.print("LOGOUT");
+    //display.print("Name:  ");
+    //display.print(curr_worker->name);
+    //display.setCursor(250, 400);
+    //display.print("Last name:  ");
+    //display.print(curr_worker->lname);
+    //display.setCursor(250, 440);
+    //display.print("ID:  ");
+    //display.print(curr_worker->ID);
+    //display.setCursor(250, 530);
+    //display.print("LOGOUT");
     display.setCursor(250, 570);
     display.print("Worked: ");
-    hours < 10 ? display.print("0") : 0;
-    display.print(hours);
-    display.print(":");
-    minutes < 10 ? display.print("0") : 0;
-    display.print(minutes);
+    display.print(_timeInSeconds);
     log_shown = millis();
     change_needed = 1;
     login_screen_shown = 1;
-    if (!(display.drawImage(curr_worker->image, 250, 20, 1, 0)))
-    {
-        display.drawImage("Normalna_slika.bmp", 250, 20, 1, 0);
-    }
+    //if (!(display.drawImage(curr_worker->image, 250, 20, 1, 0)))
+    //{
+    //    display.drawImage("Normalna_slika.bmp", 250, 20, 1, 0);
+    //}
 }
 
-void alreadyLogged()
+void alreadyLogged(uint64_t _tag)
 {
     buzz(1);
     display.clearDisplay();
@@ -638,7 +561,7 @@ void alreadyLogged()
 
 }
 
-void unknownTag(uint32_t _tagID)
+void unknownTag(unsigned long long _tagID)
 {
     buzz(2);
     display.clearDisplay();
@@ -861,82 +784,9 @@ void doServer(WiFiClient * client)
         client->println("Content-type:text/html");
         client->println("Connection: close");
         client->println();
-        bool flag_exist = 0;
-        int temp_id = 0;
-        char temp_name[20], temp_lname[20], temp_image[128];
-        char *temp = strstr(buffer, "/?") + 2;
-        uint16_t cnt = 0;
-        loadWorkersFromSD();
-        while (temp[cnt] != '\0')
-        {
-            if (temp[cnt] == '&')
-                temp[cnt] = ' ';
-            cnt++;
-        }
-        if (strstr(temp, "name") && strstr(temp, "lname") && strstr(temp, "tagID") && strstr(temp, "image"))
-        {
-            sscanf(temp, "name=%s lname=%s tagID=%d image=%s", temp_name, temp_lname, &(temp_id), temp_image);
-            Serial.println(temp_name);
-            Serial.println(temp_lname);
-            Serial.println(temp_id);
-            Serial.println(temp_image);
-            if (workers == NULL)
-            {
-                workers = (struct worker*)ps_malloc(1 * sizeof(struct worker));
-                curr_worker = workers;
-                strcpy(curr_worker->name, temp_name);
-                strcpy(curr_worker->lname, temp_lname);
-                curr_worker->ID = temp_id;
-                strcpy(curr_worker->image, temp_image);
-                curr_worker->next = NULL;
-            }
-
-            else
-            {
-                curr_worker = workers;
-                while (curr_worker != NULL)
-                {
-                    if (curr_worker->ID == temp_id)
-                    {
-                        flag_exist = 1;
-                        break;
-                    }
-                    curr_worker = curr_worker->next;
-                }
-                if (!flag_exist)
-                {
-                    curr_worker = workers;
-                    while (curr_worker->next != NULL)
-                        curr_worker = curr_worker->next;
-                    curr_worker->next = (struct worker*)ps_malloc(1 * sizeof(struct worker));
-                    if (curr_worker->next)
-                    {
-                        Serial.println("Zauzet!");
-                        curr_worker = curr_worker->next;
-                        strcpy(curr_worker->name, temp_name);
-                        strcpy(curr_worker->lname, temp_lname);
-                        curr_worker->ID = temp_id;
-                        strcpy(curr_worker->image, temp_image);
-                        curr_worker->next = NULL;
-                    }
-                }
-            }
-            Serial.print("0: ");
-            Serial.println(curr_worker->name);
-            Serial.print("1: ");
-            Serial.println(curr_worker->lname);
-            Serial.print("2: ");
-            Serial.println(curr_worker->ID);
-            Serial.print("3: ");
-            Serial.println(curr_worker->image);
-            Serial.println("Temp:");
-            Serial.println(temp_name);
-            Serial.println(temp_lname);
-            Serial.println(temp_id);
-            Serial.println(temp_image);
-            Serial.println("End temp!");
-            saveWorkersToSD();
-        }
+        unsigned long long tempID = 0;
+        char tempName[50], tempLName[50], tempImage[128];
+        char *temp = strstr(buffer, "addworker/?");
 
         client->println("<!DOCTYPE html>");
         client->println(" <html>");
@@ -953,14 +803,25 @@ void doServer(WiFiClient * client)
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
-        if (flag_exist)
+        
+        if (sscanf(temp, "addworker/?name=%[^'&']&lname=%[^'&']&tagID=%llu&image=%s;", tempName, tempLName, &(tempID), tempImage) == 4)
         {
-            client->println("        <p>Worker with ID already exist!</p>");
+            if (!myList.checkID(tempID))
+            {
+                myList.addEmployee(tempName, tempLName, tempID, tempImage);
+                logger.updateEmployeeFile();
+                client->println("        <p>Worker added successfully!</p>");
+            }
+            else
+            {
+                client->println("        <p>Worker with ID already exist!</p>");
+            }
         }
         else
         {
-            client->println("        <p>Worker added successfully!</p>");
+            client->println("ERROR!");
         }
+
         client->println("        <a href=\"/\"> <button>Home</button> </a>");
         client->println("        <a href=\"/addworker\"> <button>Add another worker</button> </a>");
         client->println("      </div>");
@@ -1028,37 +889,24 @@ void doServer(WiFiClient * client)
         client->println("Content-type:text/html");
         client->println("Connection: close");
         client->println();
-        char *temp = strstr(buffer, "/?remove") + 9;
-        uint32_t id_to_remove = 0;
-        //Serial.println("");
-        //Serial.println(temp);
-        sscanf(temp, "%d ", &id_to_remove);
-        struct worker *prev_worker = NULL;
-        curr_worker = workers;
-        while (/*curr_worker->ID != id_to_remove && */curr_worker != NULL)
+        
+        uint64_t idToRemove;
+
+        Serial.println(buffer);
+        char *_subString = strstr(buffer, "/?remove");
+        if (_subString != NULL)
         {
-            //Serial.print("Checking user with ID: ");
-            //Serial.println(curr_worker->ID);
-            //Serial.print("ID to compare: ");
-            //Serial.println(id_to_remove);
-            if (curr_worker->ID == id_to_remove)
+            if (sscanf(_subString, "/?remove=%lld", (unsigned long long*)(&idToRemove)) == 1)
             {
-                if (prev_worker == NULL)
-                {
-                    workers = curr_worker->next;
-                }
-                else
-                {
-                    prev_worker->next = curr_worker->next;
-                }
-                free(curr_worker);
-                curr_worker = workers;
-                break;
+                myList.removeEmployee(idToRemove);
+                logger.updateEmployeeFile();
             }
-            prev_worker = curr_worker;
-            curr_worker = curr_worker->next;
         }
-        saveWorkersToSD();
+        else
+        {
+            Serial.println("remove failed");
+        }
+
         client->println("<!DOCTYPE html>");
         client->println(" <html>");
         client->println(" <head>");
@@ -1459,23 +1307,31 @@ void doServer(WiFiClient * client)
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
         client->println("        <form action=\"/remove/\" method=\"GET\">");
-        curr_worker = workers;
-        while (curr_worker != NULL)
+
+        int i = 0;
+        struct worker *list = myList.getEmployee(i++);
+        if (list != NULL)
         {
-            client->print("            <input type =\"radio\" name=\"remove\" value =\"");
-            //Serial.print("ID: ");
-            //Serial.println(curr_worker->ID);
-            client->print(curr_worker->ID); //KRITIK
-            client->println("\">");
-            client->print("            <label for=\"javascript\">");
-            client->print(curr_worker->name);
-            client->print(" ");
-            client->print(curr_worker->lname);
-            client->print(" (");
-            client->print(curr_worker->ID);
-            client->print(")");
+            while (list != NULL)
+            {
+                client->print("            <input type =\"radio\" name=\"remove\" value =\"");
+                client->print(list->ID);
+                client->println("\">");
+                client->print("            <label for=\"javascript\">");
+                client->print(list->name);
+                client->print(" ");
+                client->print(list->lname);
+                client->print(" (");
+                client->print(list->ID);
+                client->print(")");
+                client->println("</label><br>");
+                list = myList.getEmployee(i++);
+            }
+        }
+        else
+        {
+            client->print("No workers in the database!");
             client->println("</label><br>");
-            curr_worker = curr_worker->next;
         }
 
         client->println("            <input type =\"submit\" value =\"Remove\">");

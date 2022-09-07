@@ -13,12 +13,13 @@
 // Timeout for logging - it nedds to pass as leasts this defined seconds from last loggeg time to be able to log the tag.
 #define LOGGING_LOG_TIMEOUT     10
 
-struct worker {
-    char name[50];
-    char lname[50];
+struct employeeData {
+    char firstName[50];
+    char lastName[50];
     char image[128];
+    char department[100];
     uint64_t ID;
-    struct worker *next;
+    struct employeeData *next;
 };
 
 #endif

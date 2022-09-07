@@ -4,21 +4,22 @@ LinkedList::LinkedList()
 
 }
 
-int LinkedList::addEmployee(char *_firstName, char *_lastName, uint64_t _id, char *_imageFilename)
+int LinkedList::addEmployee(char *_firstName, char *_lastName, uint64_t _id, char *_imageFilename, char *_department)
 {
     // If the head if at null pointer, that means there is no entery yet, we have to make first one.
     if (head == NULL)
     {   
         // Allocate memory for new entry.
-        head = (struct worker*)ps_malloc(sizeof(struct worker));
+        head = (struct employeeData*)ps_malloc(sizeof(struct employeeData));
 
         // Pointer is still NULL? Allocation is failed (no memory, PS RAM disabled?, cosmic ray hit ESP32??)
         if (head == NULL) return 0;
 
         // If allocation is successfull, copy data to the struct.
-        strlcpy(head->name, _firstName, sizeof(head->name));
-        strlcpy(head->lname, _lastName, sizeof(head->lname));
+        strlcpy(head->firstName, _firstName, sizeof(head->firstName));
+        strlcpy(head->lastName, _lastName, sizeof(head->lastName));
         strlcpy(head->image, _imageFilename, sizeof(head->image));
+        strlcpy(head->department, _department, sizeof(head->department));
         head->ID = _id;
         head->next = NULL;
 
@@ -29,7 +30,7 @@ int LinkedList::addEmployee(char *_firstName, char *_lastName, uint64_t _id, cha
     {
         // There is already some entery in the linked list? Add new pointer to the current data, "next" element.
         // Allocate memory for new entry.
-        current->next = (struct worker*)ps_malloc(sizeof(struct worker));
+        current->next = (struct employeeData*)ps_malloc(sizeof(struct employeeData));
 
         // Pointer is still NULL? Allocation is failed (no memory, PS RAM disabled?, cosmic ray hit ESP32??)
         if (head == NULL) return 0;
@@ -38,9 +39,10 @@ int LinkedList::addEmployee(char *_firstName, char *_lastName, uint64_t _id, cha
         current = current->next;
 
         // If allocation is successfull, copy data to the struct.
-        strlcpy(current->name, _firstName, sizeof(current->name));
-        strlcpy(current->lname, _lastName, sizeof(current->lname));
+        strlcpy(current->firstName, _firstName, sizeof(current->firstName));
+        strlcpy(current->lastName, _lastName, sizeof(current->lastName));
         strlcpy(current->image, _imageFilename, sizeof(current->image));
+        strlcpy(current->department, _department, sizeof(current->department));
         current->ID = _id;
         current->next = NULL;
     }
@@ -57,9 +59,9 @@ int LinkedList::removeEmployee(uint64_t _id)
     if (head == NULL || current == NULL) return 0;
 
     // Set up pointers. Because we have single linked list, it's needed to keep track of address of prev. element.
-    struct worker *_prev = NULL;
-    struct worker *_curr = head;
-    struct worker *_next = head->next;
+    struct employeeData *_prev = NULL;
+    struct employeeData *_curr = head;
+    struct employeeData *_next = head->next;
     
     // Find element with needed ID tag.
     while (_curr != NULL && _curr->ID != _id)
@@ -106,13 +108,13 @@ int LinkedList::removeEmployee(uint64_t _id)
     return _ret;
 }
 
-struct worker *  LinkedList::getEmployee(int i)
+struct employeeData *  LinkedList::getEmployee(int i)
 {
     // First check for empty linked list
     if (head == NULL) return NULL;
 
     // Set pointer to the first element of the linked ist (head).
-    struct worker *_current = head;
+    struct employeeData *_current = head;
     
     // Variable for counting.
     int k = 0;
@@ -132,13 +134,13 @@ struct worker *  LinkedList::getEmployee(int i)
     return NULL;
 }
 
-struct worker *  LinkedList::getEmployeeByID(uint64_t _id)
+struct employeeData *  LinkedList::getEmployeeByID(uint64_t _id)
 {
     // First check for empty linked list
     if (head == NULL) return NULL;
 
     // Set pointer to the first element of the linked ist (head).
-    struct worker *_current = head;
+    struct employeeData *_current = head;
 
     // Try to find element with that index. Go until you find end of the list (current elements points to the NULL).
     while (_current != NULL)
@@ -160,7 +162,7 @@ struct worker *  LinkedList::getEmployeeByID(uint64_t _id)
 void LinkedList::removeAllEmployees()
 {
     // Temp pointer for next element in the linked list.
-    struct worker *_next;
+    struct employeeData *_next;
 
     // Set current pointer to the head of the linked list.
     current = head;
@@ -187,7 +189,7 @@ int LinkedList::checkID(uint64_t _id)
     int i = 0;
 
     // Try to get first element from linked list.
-    struct worker *_list = getEmployee(i++);
+    struct employeeData *_list = getEmployee(i++);
 
     // Go trough the list until until there are no more elements in the list.
     while (_list != NULL)
@@ -207,7 +209,7 @@ int LinkedList::numberOfElements()
     // Variable for counting elements in the linkend list. Initialize it on zero.
     int _n = 0;
 
-    struct worker *_list = getEmployee(_n);
+    struct employeeData *_list = getEmployee(_n);
 
     // Run a while loop until you got to the end of the list (end of the list is indicated by returning NULL pointer).
     while (_list != NULL)
@@ -222,13 +224,14 @@ int LinkedList::numberOfElements()
 
 void LinkedList::printAllData()
 {
-    struct worker *_myList = head;
+    struct employeeData *_myList = head;
 
     while (_myList != NULL)
     {
-        Serial.println(_myList->name);
-        Serial.println(_myList->lname);
+        Serial.println(_myList->firstName);
+        Serial.println(_myList->lastName);
         Serial.println(_myList->image);
+        Serial.println(_myList->department);
         Serial.println(_myList->ID);
         Serial.println("-----------------");
         _myList = _myList->next;

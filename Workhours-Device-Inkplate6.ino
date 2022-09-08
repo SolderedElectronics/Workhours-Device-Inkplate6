@@ -124,6 +124,9 @@ void setup()
     display.setTextColor(BLACK, WHITE);
 
     change_needed = 1;
+
+    logger.calculateNextDailyReport();
+    logger.createDailyReport();
 }
 
 void loop()
@@ -139,7 +142,7 @@ void loop()
     else
     {
         WiFi.reconnect(); // If connection to Wi Fi is lost then reconnect
-        Serial.println("Reconnecting");
+        // Serial.println("Reconnecting");
     }
     if (Serial2.available()) // Check if tag is scanned
     {
@@ -170,10 +173,6 @@ void loop()
 
             // If tag is not in the list, show error message!
             if (result == LOGGING_TAG_NOT_FOUND) unknownTag(tag);
-        }
-        else
-        {
-            
         }
     }
 
@@ -280,7 +279,8 @@ void fetchTime()
 void login(struct employeeData *_w)
 {
     // Code for login screen
-    buzz(1);
+    char _imagePath[200];
+
     display.setTextSize(1);
     display.setFont(&Inter16pt7b);
     display.setCursor(250, 360);
@@ -295,22 +295,23 @@ void login(struct employeeData *_w)
     display.print(_w->ID);
     display.printf(" [%s]", _w->department);
     display.setCursor(250, 530);
-    display.print("LOGIN");
+    display.print("Login");
+    createImagePath((*_w), _imagePath);
+    if (!(display.drawImage(_imagePath, 250, 20, 1, 0)))
+    {
+         display.drawImage(DEFAULT_IMAGE_PATH, 250, 20, 1, 0);
+    }
+    buzz(1);
     log_shown = millis();
     change_needed = 1;
     login_screen_shown = 1;
-    // Serial.print("Image drawn: ");
-    // if (!(display.drawImage(curr_worker->image, 250, 20, 1, 0)))
-    //{
-    //     display.drawImage("Normalna_slika.bmp", 250, 20, 1, 0);
-    // }
 }
 
 void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
 {
     // Code for logout screen
-
-    buzz(1);
+    char _imagePath[200];
+    
     display.setTextSize(1);
     display.setFont(&Inter16pt7b);
     display.setCursor(250, 360);
@@ -325,18 +326,20 @@ void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
     display.print(_w->ID);
     display.printf(" [%s]", _w->department);
     display.setCursor(250, 530);
-    display.print("LOGOUT");
+    display.print("Logout");
     display.setCursor(250, 470);
     display.printf("Daily: %2d:%02d:%02d", _dailyHours / 3600, _dailyHours / 60 % 60, _dailyHours % 60);
     display.setCursor(250, 570);
     display.printf("Weekly: %2d:%02d:%02d", _weekHours / 3600, _weekHours / 60 % 60, _weekHours % 60);
+    createImagePath((*_w), _imagePath);
+    if (!(display.drawImage(_imagePath, 250, 20, 1, 0)))
+    {
+         display.drawImage(DEFAULT_IMAGE_PATH, 250, 20, 1, 0);
+    }
+    buzz(1);
     log_shown = millis();
     change_needed = 1;
     login_screen_shown = 1;
-    // if (!(display.drawImage(curr_worker->image, 250, 20, 1, 0)))
-    //{
-    //     display.drawImage("Normalna_slika.bmp", 250, 20, 1, 0);
-    // }
 }
 
 void alreadyLogged(uint64_t _tag)

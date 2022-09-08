@@ -3,5 +3,5 @@
     "configuration": "PartitionScheme=no_ota,FlashMode=qio,FlashFreq=80,UploadSpeed=921600,DebugLevel=none",
     "board": "Inkplate_Boards:esp32:Inkplate6",
     "output": "./output",
-    "port": "COM5"
+    "port": "COM8"
 }

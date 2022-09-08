@@ -415,10 +415,32 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
                 // Go to the end of the file.
                 myFile.seekEnd();
 
+                // Now check if the last logged time is valid.
+                // For example, someone forgot to logout and now login time would be a logout time.
+                // This is all good IF this happend in the same day, but problem is when it's new day.
+                // So, first check if there is day difference in last login and current epoch.
+                // If not, log is vaild, if not, logout needs to be invalid and now it's actually login time.
+                int32_t _dayStartEpoch;
+                int32_t _dayEndEpoch;
+                calculateDayEpoch(_epoch, &_dayStartEpoch, &_dayEndEpoch);
+
+                if (!(_lastLogEpoch >= _dayStartEpoch && _lastLogEpoch <= _dayEndEpoch) && _lastLogEpoch != 0)
+                {
+                    // Add Special string defined in dataTypes.h
+                    Serial.println("NOPE, you forgot to logut last time!");
+
+                    myFile.print(LOGGING_ERROR_STRING);
+                    myFile.println("; ");
+
+                    // Change flag to login
+                    _logInOutTag = LOGGING_TAG_LOGIN;
+                }
+
                 // Log the data!
                 char oneLine[100];
                 sprintf(oneLine, "%lu; ", _epoch);
 
+                // If it's a logout tag, send a new line at the end of the string (log time), otherwise don't.
                 if (_logInOutTag == LOGGING_TAG_LOGOUT)
                 {
                     myFile.println(oneLine);
@@ -427,12 +449,17 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
                 {
                     myFile.print(oneLine);
                 }
+
+                // Close the file (send data to the uSD card).
                 myFile.close();
 
+                // Return to the root of the uSD card (and set it as current working directory)
                 sd.chdir(true);
 
+                // Send employee data (so it can be used in the main code)
                 _w = *(_employee);
 
+                // Return a flag
                 return _logInOutTag;
             }
         }
@@ -442,7 +469,7 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
             return LOGGING_TAG_NOT_FOUND;
         }
     }
-    // Unknown error...
+    // Unknown error...Hudston we have a problem!
     return LOGGING_TAG_ERROR;
 }
 
@@ -653,7 +680,7 @@ int32_t Logging::getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch)
     return _weekHours;
 }
 
-int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch)
+int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t *_firstLogin, int32_t *_lastLogout)
 {
     // First init uSD card. If uSD card can't be initialized, return -1 (error).
     if (!sd.begin(15, SD_SCK_MHZ(10)))
@@ -668,6 +695,8 @@ int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch)
     int32_t _startWeekEpoch;
     int32_t _endWeekEpoch;
     uint32_t _dailyHours = 0;
+    int32_t _firstTimeLogin = -1;
+    int32_t _lastTimeLogout = -1;
 
     SdFile _myFile;
 
@@ -718,10 +747,75 @@ int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch)
             if ((_login >= _startWeekEpoch) && (_login <= _endWeekEpoch) && (_logout <= _endWeekEpoch) && (_logout >= _startWeekEpoch))
             {
                 _dailyHours += (_logout - _login);
+                _lastTimeLogout = _logout;
+                if (_firstTimeLogin == -1) _firstTimeLogin = _login;
             }
         }
     }
+    if (_firstLogin != NULL) (*_firstLogin) = _firstTimeLogin;
+    if (_lastLogout != NULL) (*_lastLogout) = _lastTimeLogout;
     _myFile.close();
     return _dailyHours;
 }
 
+void Logging::calculateNextDailyReport()
+{
+    // Calculate the next epoch for making a report for the current day (calculating first login time, last login time and work time)
+
+    // First we need current date and time. We can get it from the RTC.
+    _ink->rtcGetRtcData();
+    int32_t _epoch = _ink->rtcGetEpoch();
+
+    // Now get the end of the day epoch
+    int32_t _startDayEpoch;
+    int32_t _endDayEpoch;
+    calculateDayEpoch(_epoch, &_startDayEpoch, &_endDayEpoch);
+
+    // Stat calculating 1 minute before midnight
+    _dailyReportEpoch = _endDayEpoch - 59;
+}
+
+bool Logging::isDailyReport()
+{
+    // Check if the daily report for emploxees needs to be created
+    _ink->rtcGetRtcData();
+    int32_t _epoch = _ink->rtcGetEpoch();
+
+    if (_epoch >= _dailyReportEpoch)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+int Logging::createDailyReport()
+{
+    // Try to get how much employees we have in the list
+    int _n = _link->numberOfElements();
+
+    for (int i = 0; i < _n; i++)
+    {
+        // Get the employee data
+        struct employeeData *_e = _link->getEmployee(i);
+
+        int32_t _firstLoginEpoch;
+        int32_t _lastLogoutEpoch;
+        int32_t _workHours;
+
+        _workHours = getEmployeeDailyHours(_e->ID, _dailyReportEpoch, &_firstLoginEpoch, &_lastLogoutEpoch);
+
+        /////////DEBUG/////////////
+        Serial.println(_e->firstName);
+        Serial.println(_e->lastName);
+        Serial.println(_firstLoginEpoch);
+        Serial.println(_lastLogoutEpoch);
+        Serial.println(_workHours);
+        Serial.println("-------------------------");
+        ///////////////////////////
+    }
+
+    return 1;
+}

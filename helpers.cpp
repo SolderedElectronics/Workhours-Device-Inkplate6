@@ -119,3 +119,13 @@ void fixHTTPResponseText(char *_c)
         }
     }
 }
+
+char* createImagePath(struct employeeData _e, char *_buffer)
+{
+    if (_buffer == NULL)
+        return NULL;
+    
+    sprintf(_buffer, "/%s/%s%s%llu/%s", DEFAULT_FOLDER_NAME, _e.firstName, _e.lastName, (unsigned long long)_e.ID, _e.image);
+
+    return _buffer;
+}

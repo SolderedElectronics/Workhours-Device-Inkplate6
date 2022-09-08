@@ -4,6 +4,10 @@
 #include "stdlib.h"
 
 #define DEFAULT_FOLDER_NAME "WorkingHoursDevice"
+#define DEFAULT_IMAGE_NAME  "defaultImage.bmp"
+#define DEFAULT_IMAGE_PATH  DEFAULT_FOLDER_NAME "/" DEFAULT_IMAGE_NAME
+#define LOGGING_ERROR_STRING "??????????"
+
 #define LOGGING_TAG_NOT_FOUND   0
 #define LOGGING_TAG_LOGIN       1
 #define LOGGING_TAG_LOGOUT      2

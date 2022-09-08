@@ -19,13 +19,18 @@ class Logging
     int addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w);
     int findLastEntry(SdFile *_f, uint32_t *_epoch, uint8_t *_log);
     int32_t getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch);
-    int32_t getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch);
+    int32_t getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t *_firstLogin = NULL, int32_t *_lastLogout = NULL);
+    void calculateNextDailyReport();
+    bool isDailyReport();
+    int createDailyReport();
 
     private:
     struct employeeData *employees;
     SdFat *_sd;
     LinkedList *_link;
     Inkplate *_ink;
+
+    int32_t _dailyReportEpoch = 0;
 };
 
 #endif

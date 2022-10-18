@@ -766,18 +766,24 @@ void Logging::calculateNextDailyReport()
     _ink->rtcGetRtcData();
     int32_t _epoch = _ink->rtcGetEpoch();
 
+    // Add minute on that reading to aviod false calulating (for example, daily report is being made at 23:59:50 1.1.2022. and it's done at 23:59:52 1.1.2022.,so "next" calculation will be at 23:59:50 1.1.2022. that is acctually wrong)
+    _epoch += 60;
+
     // Now get the end of the day epoch
     int32_t _startDayEpoch;
     int32_t _endDayEpoch;
     calculateDayEpoch(_epoch, &_startDayEpoch, &_endDayEpoch);
 
-    // Stat calculating 1 minute before midnight
-    _dailyReportEpoch = _endDayEpoch - 59;
+    // Stat calculating 10 seconds before midnight
+    _dailyReportEpoch = _endDayEpoch - 9;
+
+    Serial.print("Daily report epoch:");
+    Serial.println(_dailyReportEpoch, DEC);
 }
 
 bool Logging::isDailyReport()
 {
-    // Check if the daily report for emploxees needs to be created
+    // Check if the daily report for employees needs to be created
     _ink->rtcGetRtcData();
     int32_t _epoch = _ink->rtcGetEpoch();
 
@@ -793,8 +799,34 @@ bool Logging::isDailyReport()
 
 int Logging::createDailyReport()
 {
+    // For file managment
+    SdFile _myFile;
+
+    // For filename and path
+    char _pathStr[250];
+
+    // For time and date struct
+    struct tm _myTime;
+
+    // For epoch from the RTC
+    uint32_t _epoch;
+
     // Try to get how much employees we have in the list
     int _n = _link->numberOfElements();
+
+    // Empty list? Return error.
+    if (_n == 0) return 0;
+
+    // Try to init micro SD card. If failed, return 0 (error).
+    if (!sd.begin(15, SD_SCK_MHZ(10))) return 0;
+
+    // Go to the root of the micro SD card. If failed, return error.
+    if (!sd.chdir(true)) return 0;
+
+    // Get time and date
+    _ink->rtcGetRtcData();
+    _epoch = _ink->rtcGetEpoch();
+    memcpy(&_myTime, localtime((const time_t *)&_epoch), sizeof(_myTime));
 
     for (int i = 0; i < _n; i++)
     {
@@ -804,17 +836,50 @@ int Logging::createDailyReport()
         int32_t _firstLoginEpoch;
         int32_t _lastLogoutEpoch;
         int32_t _workHours;
+        int32_t _overtime = 0;
 
         _workHours = getEmployeeDailyHours(_e->ID, _dailyReportEpoch, &_firstLoginEpoch, &_lastLogoutEpoch);
 
-        /////////DEBUG/////////////
-        Serial.println(_e->firstName);
-        Serial.println(_e->lastName);
-        Serial.println(_firstLoginEpoch);
-        Serial.println(_lastLogoutEpoch);
-        Serial.println(_workHours);
-        Serial.println("-------------------------");
-        ///////////////////////////
+        // Create a path and a filename for the report
+        sprintf(_pathStr, "/%s/%s%s%llu/%d/%s_%04d_%02d_report.csv", DEFAULT_FOLDER_NAME, &(_e->firstName), &(_e->lastName),
+                        (unsigned long long)(_e->ID), _myTime.tm_year + 1900, _e->firstName, _myTime.tm_year + 1900, _myTime.tm_mon + 1);
+
+        // Check if the file even exists. If not, create it and add a header.
+        if (!sd.exists(_pathStr))
+        {
+            // Try to create the file, if file create failed, something is wrong, abort, abort!
+            if (_myFile.open(_pathStr, O_CREAT | O_RDWR))
+            {
+                _myFile.println("Time; Date; Work Time; Overtime;");
+                _myFile.close();
+            }
+        }
+
+        // If file already exists, open it and make it available for reading as well as for writing.
+        if (!_myFile.open(_pathStr, O_RDWR)) return 0;
+        
+        // Go to the end of the file.
+        _myFile.seekEnd();
+
+        // Calculate overtime hours
+        // If it's saturday or sunday, all work hours are overtime
+        if (_myTime.tm_wday == 6 || _myTime.tm_wday == 0) _overtime = _workHours;
+
+        // If it's friday, more than 4 hours are overtime
+        if (_myTime.tm_wday == 5) _overtime = _workHours - (4 * 60 * 60);
+
+        // Any other day, overtime is anything more than 9 horus
+        if (_myTime.tm_wday > 0 && _myTime.tm_wday < 5) _overtime = _workHours - (9 * 60 * 60);
+        
+        // No negative overtime.
+        if (_overtime < 0) _overtime = 0;
+
+        // Write the data into the file.
+        sprintf(_pathStr, "%02d:%02d:%02d;%02d/%02d/%04d;%02d:%02d:%02d;%02d:%02d:%02d;", _myTime.tm_hour, _myTime.tm_min, _myTime.tm_sec, _myTime.tm_mday, _myTime.tm_mon + 1, _myTime.tm_year + 1900, _workHours / 3600, _workHours / 60 % 60, _workHours % 60, _overtime / 3600, _overtime / 60 % 60, _overtime % 60);
+        _myFile.println(_pathStr);
+
+        // Close the file (avoid memory leak at all cost!)
+        _myFile.close();
     }
 
     return 1;

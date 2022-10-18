@@ -24,18 +24,17 @@ Inkplate display(INKPLATE_1BIT); // Create an object on Inkplate library and als
 StaticJsonDocument<30000> doc;   // Buffer for JSON document
 WiFiServer server(80);
 
-
 LinkedList myList;
 Logging logger;
 
 uint32_t refreshes = 0;
 time_t read_epoch;
 // Set your Static IP address
-IPAddress local_IP(192, 168, 1, 250); // IP address should be set to desired address
+IPAddress localIP(192, 168, 71, 200); // IP address should be set to desired address
 // Set your Gateway IP address
-IPAddress gateway(192, 168, 1, 1); // Gateway address should match IP address
+IPAddress gateway(192, 168, 71, 1); // Gateway address should match IP address
 
-IPAddress subnet(255, 255, 0, 0);
+IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);   // optional
 IPAddress secondaryDNS(8, 8, 4, 4); // optional
 
@@ -60,12 +59,12 @@ void setup()
     Serial2.begin(57600, SERIAL_8N1, 39, -1); // Software Serial for RFID
     display.begin();                          // Init Inkplate library (you should call this function ONLY ONCE)
     display.clearDisplay();                   // Clear frame buffer of display
-    display.display();                        // Put clear image on display
+    display.setTextColor(BLACK, WHITE);
+    display.display(); // Put clear image on display
     display.sdCardInit();
-    // display.rtcReset();
     display.setFont(&Inter16pt7b);
     display.setCursor(10, 30);
-    display.pinModeMCP(0, OUTPUT);
+    //display.pinModeMCP(0, OUTPUT);
 
     if (!sd.begin(15, SD_SCK_MHZ(10)))
     {
@@ -75,10 +74,10 @@ void setup()
             ;
     }
 
-    if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS))
+    if (!WiFi.config(localIP, gateway, subnet, primaryDNS, secondaryDNS))
     {
-        display.println("STA Failed to configure, please reset Inkplate! If error keeps to repeat, try to cnofigure "
-                        "STA in different way or use another IP address");
+         display.println("STA Failed to configure, please reset Inkplate! If error keeps to repeat, try to cnofigure "
+                         "STA in different way or use another IP address");
     }
 
     WiFi.mode(WIFI_STA);
@@ -115,18 +114,21 @@ void setup()
     // Start server
     server.begin();
 
-    fetchTime();
+    if (!fetchTime())
+    {
+        display.print("Can't get the time and date!");
+        display.partialUpdate(0, 1);
+        while (true)
+            ;
+    }
 
     // Initialize library for logging functions. Send address of the SdFat object and Linked List object as parameters
     // (needed by the library).
     logger.begin(&sd, &myList, &display);
-
-    display.setTextColor(BLACK, WHITE);
-
     change_needed = 1;
 
+    // Be ready for the next daily report calculation
     logger.calculateNextDailyReport();
-    logger.createDailyReport();
 }
 
 void loop()
@@ -160,19 +162,23 @@ void loop()
             // If eeverything went ok, read the result.
 
             // If it's login, show login screen with name, last name, department, tagID etc.
-            if (result == LOGGING_TAG_LOGIN) login(&employee);
+            if (result == LOGGING_TAG_LOGIN)
+                login(&employee);
 
             // If the tag if already logged in the span of 10 minutes, just ingore it and show error message
-            if (result == LOGGING_TAG_10MIN) alreadyLogged(tag);
+            if (result == LOGGING_TAG_10MIN)
+                alreadyLogged(tag);
 
             // If it's logout, show logout screen with weekday work hours and daily work hours.
             if (result == LOGGING_TAG_LOGOUT)
             {
-                logout(&employee, logger.getEmployeeDailyHours(tag, (int32_t)display.rtcGetEpoch()), logger.getEmployeeWeekHours(tag, (int32_t)display.rtcGetEpoch()));
+                logout(&employee, logger.getEmployeeDailyHours(tag, (int32_t)display.rtcGetEpoch()),
+                       logger.getEmployeeWeekHours(tag, (int32_t)display.rtcGetEpoch()));
             }
 
             // If tag is not in the list, show error message!
-            if (result == LOGGING_TAG_NOT_FOUND) unknownTag(tag);
+            if (result == LOGGING_TAG_NOT_FOUND)
+                unknownTag(tag);
         }
     }
 
@@ -208,74 +214,86 @@ void loop()
         change_needed = 0;
     }
 
-    // prev_hours = display.rtcGetHour();
-    // prev_minutes = display.rtcGetMinute();
+    // Check if daily report needs to be made.
+    if (logger.isDailyReport())
+    {
+        // Make a daily report for all employees
+        logger.createDailyReport();
 
-    // if (prev_hours == 23 && display.rtcGetHour() == 0) // If midnight, call function checkDaily and get time
-    // {
-    //     checkDaily();
-    //     fetchTime();
-    // }
+        // Calculate the time for the next.
+        logger.calculateNextDailyReport();
+    }
 }
 
 // Time fetching
 
-void fetchTime()
+int fetchTime()
 {
-    return;
-    HTTPClient http;
-    http.begin("https://www.timeapi.io/api/Time/current/zone?timeZone=Europe/Zagreb");
-    int httpCode;
-    do
+    WiFiClientSecure client;
+    DynamicJsonDocument _doc(500);
+    DeserializationError _err;
+    char _temp[500];
+    struct tm _t;
+    int32_t _epoch;
+
+    client.setInsecure(); // Skip verification
+    if (client.connect("timeapi.io", 443))
     {
-        httpCode = http.GET();
-    } while (httpCode != 200);
-    display.setCursor(10, 90);
-    display.print("Getting time...");
-    display.partialUpdate(0, 1);
-    if (httpCode == 200)
-    {
-        while (http.getStream().available() && http.getStream().peek() != '{')
-            (void)http.getStream().read();
-        DeserializationError error = deserializeJson(doc, http.getStream());
-        if (error)
+        Serial.println("Connected!");
+        client.println("GET /api/Time/current/zone?timeZone=Europe/Zagreb HTTP/1.0");
+        client.println("Host: timeapi.io");
+        client.println("Connection: close");
+        client.println();
+
+        // Skip header.
+        while (client.connected())
         {
-            // Serial.print(F("deserializeJson() failed: "));
-            // Serial.println(error.c_str());
-        }
-        else
-        {
-            struct tm t;
-            t.tm_year = (int)doc["year"] - 1900;
-            t.tm_mon = (int)doc["month"] - 1;
-            t.tm_mday = doc["day"];
-            t.tm_hour = doc["hour"];
-            t.tm_min = doc["minute"];
-            t.tm_sec = doc["seconds"];
-            const char *weekday_string = doc["dayOfWeek"];
-            for (int i = 0; i < 7; i++)
+            String line = client.readStringUntil('\n');
+            if (line == "\r")
             {
-                if (strstr(wday_name[i], weekday_string))
-                {
-                    t.tm_wday = i;
-                }
+                break;
             }
-            t.tm_isdst = 0;
-            display.rtcSetTime(t.tm_hour, t.tm_min, t.tm_sec);
-            display.rtcSetDate(t.tm_wday, t.tm_mday, t.tm_mon + 1, t.tm_year + 1900);
-            display.rtcGetRtcData();
         }
+        // if there are incoming bytes available
+        // from the server, read them and print them:
+        int i = 0;
+        memset(_temp, 0, sizeof(_temp));
+        while (client.available())
+        {
+            _temp[i++] = client.read();
+        }
+        client.stop();
+
+        _err = deserializeJson(_doc, _temp);
+
+        if (_err)
+        {
+            return 0;
+        }
+
+        if (!_doc.containsKey("seconds"))
+        {
+            return 0;
+        }
+
+        _t.tm_year = (int)_doc["year"] - 1900;
+        _t.tm_mon = (int)_doc["month"] - 1;
+        _t.tm_mday = _doc["day"];
+        _t.tm_hour = _doc["hour"];
+        _t.tm_min = _doc["minute"];
+        _t.tm_sec = _doc["seconds"];
+        _t.tm_isdst = 0;
+        _epoch = mktime(&_t);
+
+        display.rtcSetEpoch(_epoch);
+        display.rtcGetRtcData();
+        return 1;
     }
-    else if (httpCode == 404)
-    {
-        // Serial.println(F("Time has not been fetched!"));
-    }
-    doc.clear();
-    http.end();
+    client.stop();
+    return 0;
 }
 
 // Display screens
-
 void login(struct employeeData *_w)
 {
     // Code for login screen
@@ -299,7 +317,7 @@ void login(struct employeeData *_w)
     createImagePath((*_w), _imagePath);
     if (!(display.drawImage(_imagePath, 250, 20, 1, 0)))
     {
-         display.drawImage(DEFAULT_IMAGE_PATH, 250, 20, 1, 0);
+        display.drawImage(DEFAULT_IMAGE_PATH, 250, 20, 1, 0);
     }
     buzz(1);
     log_shown = millis();
@@ -311,7 +329,7 @@ void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
 {
     // Code for logout screen
     char _imagePath[200];
-    
+
     display.setTextSize(1);
     display.setFont(&Inter16pt7b);
     display.setCursor(250, 360);
@@ -334,7 +352,7 @@ void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
     createImagePath((*_w), _imagePath);
     if (!(display.drawImage(_imagePath, 250, 20, 1, 0)))
     {
-         display.drawImage(DEFAULT_IMAGE_PATH, 250, 20, 1, 0);
+        display.drawImage(DEFAULT_IMAGE_PATH, 250, 20, 1, 0);
     }
     buzz(1);
     log_shown = millis();
@@ -389,9 +407,9 @@ void buzz(uint8_t n)
 {
     for (int i = 0; i < n; i++)
     {
-        display.digitalWriteMCP(0, HIGH);
+        //display.digitalWriteMCP(0, HIGH);
         delay(150);
-        display.digitalWriteMCP(0, LOW);
+        //display.digitalWriteMCP(0, LOW);
         delay(150);
     }
 }
@@ -400,8 +418,8 @@ void doServer(WiFiClient *client)
 {
     char buffer[256];
     client->read((uint8_t *)buffer, 256);
-    //Serial.println(buffer);
-    //Serial.println("\n\n");
+    // Serial.println(buffer);
+    // Serial.println("\n\n");
     if (strstr(buffer, "style.css"))
     {
         client->println("HTTP/1.1 200 OK");
@@ -554,7 +572,6 @@ void doServer(WiFiClient *client)
         client->println("  background-color: #252524;");
         client->println("} ");
     }
-
     else if (strstr(buffer, "/inter.woff"))
     {
         client->println("HTTP/1.1 200 OK");
@@ -562,18 +579,40 @@ void doServer(WiFiClient *client)
         client->println("Cache-Control: public, max-age=2678400");
         client->println("Connection: close");
         client->println();
-        sd.begin(15, SD_SCK_MHZ(25));
-        char *ps = (char *)ps_malloc(50000);
-        File file;
-        //Serial.println(file.open("/inter.txt", FILE_READ));
-        int size_of_file = file.size();
-        memset(ps, 0, size_of_file * sizeof(char));
-        file.read(ps, size_of_file);
-        file.close();
-        client->write(ps, size_of_file);
-        free(ps);
-    }
 
+        // Init micro SD Card
+        sd.begin(15, SD_SCK_MHZ(10));
+
+        // Set root as current working directory
+        sd.chdir(true);
+
+        // Allocate memory for the font file
+        char *ps = (char *)ps_malloc(50000);
+
+        // Allocation ok? Get the file from the micro SD
+        if (ps != NULL)
+        {
+            File file;
+            char _filePath[250];
+
+            // Make path to the font file
+            sprintf(_filePath, "%s/%s", DEFAULT_FOLDER_NAME, "webFontInter.dat");
+
+            // Try to open the file
+            if (file.open(_filePath, FILE_READ))
+            {
+                // Opened successfully. Get the bytes and send it to the web.
+                int size_of_file = file.size();
+                memset(ps, 0, size_of_file * sizeof(char));
+                file.read(ps, size_of_file);
+                file.close();
+                client->write(ps, size_of_file);
+            }
+
+            // Free the memory.
+            free(ps);
+        }
+    }
     else if (strstr(buffer, "addworker/?"))
     {
         client->println("HTTP/1.1 200 OK");
@@ -603,8 +642,8 @@ void doServer(WiFiClient *client)
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
 
-        if (sscanf(temp, "addworker/?name=%[^'&']&lname=%[^'&']&tagID=%llu&department=%[^'&']&image=%s;", tempName, tempLName, &(tempID),
-                   tempDepartment, tempImage) == 5)
+        if (sscanf(temp, "addworker/?name=%[^'&']&lname=%[^'&']&tagID=%llu&department=%[^'&']&image=%s;", tempName,
+                   tempLName, &(tempID), tempDepartment, tempImage) == 5)
         {
             if (!myList.checkID(tempID))
             {
@@ -631,7 +670,6 @@ void doServer(WiFiClient *client)
         client->println(" </body>");
         client->println("</html>");
     }
-
     else if (strstr(buffer, "/addworker"))
     {
         client->println("HTTP/1.1 200 OK");
@@ -675,7 +713,6 @@ void doServer(WiFiClient *client)
         client->println(" </body>");
         client->println("</html>");
     }
-
     else if (strstr(buffer, "/favicon.ico"))
     {
         client->println("HTTP/1.1 200 OK");
@@ -685,7 +722,6 @@ void doServer(WiFiClient *client)
         client->println();
         client->write(favicon, 318);
     }
-
     else if (strstr(buffer, "remove/?remove"))
     {
         client->println("HTTP/1.1 200 OK");
@@ -695,7 +731,7 @@ void doServer(WiFiClient *client)
 
         uint64_t idToRemove;
 
-        //Serial.println(buffer);
+        // Serial.println(buffer);
         char *_subString = strstr(buffer, "/?remove");
         if (_subString != NULL)
         {
@@ -707,7 +743,7 @@ void doServer(WiFiClient *client)
         }
         else
         {
-            //Serial.println("remove failed");
+            // Serial.println("remove failed");
         }
 
         client->println("<!DOCTYPE html>");
@@ -734,7 +770,6 @@ void doServer(WiFiClient *client)
         client->println(" </body>");
         client->println("</html>");
     }
-
     else if (strstr(buffer, "/monthly/"))
     {
         client->println("HTTP/1.1 200 OK");
@@ -771,7 +806,7 @@ void doServer(WiFiClient *client)
                 {
                     memset(strTemp, 0, 56 * sizeof(char));
                     tempFile.getName(strTemp, 56);
-                    //Serial.println(strTemp);
+                    // Serial.println(strTemp);
                     if (strstr(strTemp, ".csv") && strstr(strTemp, wname))
                     {
                         client->print(F("        <a href='/download/"));
@@ -794,7 +829,6 @@ void doServer(WiFiClient *client)
         client->println(" </body>");
         client->println("</html>");
     }
-
     else if (strstr(buffer, "/monthly"))
     {
         client->println("HTTP/1.1 200 OK");
@@ -850,7 +884,6 @@ void doServer(WiFiClient *client)
         client->println(" </body>");
         client->println("</html>");
     }
-
     else if (strstr(buffer, "/byworker/?"))
     {
         client->println("HTTP/1.1 200 OK");
@@ -958,7 +991,6 @@ void doServer(WiFiClient *client)
             dir.close();
             }*/
     }
-
     else if (strstr(buffer, "/byworker/"))
     {
         client->println("HTTP/1.1 200 OK");
@@ -975,7 +1007,7 @@ void doServer(WiFiClient *client)
             i++;
         }
         wanted[i] = '\0';
-        //Serial.println(wanted);
+        // Serial.println(wanted);
         if ((sd).begin(15, SD_SCK_MHZ(25)))
         {
             File dir;
@@ -1076,16 +1108,16 @@ void doServer(WiFiClient *client)
         *(strstr(temp, ".") + 4) = '\0';
         char fileName[48];
         strcpy(fileName, temp);
-        //Serial.print("File name: ");
-        //Serial.println(fileName);
+        // Serial.print("File name: ");
+        // Serial.println(fileName);
         char *ps = (char *)ps_malloc(10000);
         memset(ps, 0, 10000 * sizeof(char));
-        //Serial.print("File opened: ");
+        // Serial.print("File opened: ");
         File file;
-        //Serial.println(file.open(fileName, FILE_READ));
+        // Serial.println(file.open(fileName, FILE_READ));
         file.read(ps, 10000);
-        //Serial.print("PS: ");
-        //Serial.println(ps);
+        // Serial.print("PS: ");
+        // Serial.println(ps);
         file.close();
         client->write(ps, strlen(ps));
         free(ps);

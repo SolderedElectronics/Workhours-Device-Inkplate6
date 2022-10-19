@@ -129,3 +129,19 @@ char* createImagePath(struct employeeData _e, char *_buffer)
 
     return _buffer;
 }
+
+void createTimeStampFromEpoch(char *_str, int32_t _epoch)
+{
+    // Check if the pointer is valid, if not, return error.
+    if (_str == NULL) return;
+
+    // Struct for human human readable time and date
+    struct tm _myTime;
+
+    // Convert epoch to human time and date
+    const time_t _time = _epoch;
+    memcpy(&_myTime, localtime(&_time), sizeof(_myTime));
+
+    // Make an timestamp in format HH:MM:SS DD.MM.YYYYY.
+    sprintf(_str, "%02d:%02d:%02d %02d.%02d.%04d.", _myTime.tm_hour, _myTime.tm_min, _myTime.tm_sec, _myTime.tm_mday, _myTime.tm_mon + 1, _myTime.tm_year + 1900);
+}

@@ -427,8 +427,6 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
                 if (!(_lastLogEpoch >= _dayStartEpoch && _lastLogEpoch <= _dayEndEpoch) && _lastLogEpoch != 0)
                 {
                     // Add Special string defined in dataTypes.h
-                    Serial.println("NOPE, you forgot to logut last time!");
-
                     myFile.print(LOGGING_ERROR_STRING);
                     myFile.println("; ");
 
@@ -680,7 +678,7 @@ int32_t Logging::getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch)
     return _weekHours;
 }
 
-int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t *_firstLogin, int32_t *_lastLogout)
+int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t *_firstLogin, int32_t *_lastLogout, int *_missedLogutFlag)
 {
     // First init uSD card. If uSD card can't be initialized, return -1 (error).
     if (!sd.begin(15, SD_SCK_MHZ(10)))
@@ -692,12 +690,16 @@ int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t
     sd.chdir(true);
 
     // Now try to get every login and logout data of this specific employee.
-    int32_t _startWeekEpoch;
-    int32_t _endWeekEpoch;
+    int32_t _startDayEpoch;
+    int32_t _endDayEpoch;
     uint32_t _dailyHours = 0;
     int32_t _firstTimeLogin = -1;
     int32_t _lastTimeLogout = -1;
 
+    // Set missed logouts to false.
+    if (_missedLogutFlag != NULL) *_missedLogutFlag = 0;
+
+    // For file handling.
     SdFile _myFile;
 
     // Get all employee data (First name, last name, tagID, etc...)
@@ -719,14 +721,12 @@ int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t
         return -1;
     }
 
-    // Now, tricky stuff. But this function can save us! It calculates the epoch for first day of the week and the last day of the week where current epoch lands.
-    // For example if epoch of 07.09.2022 15:05:14 is send it will return epoch for 05.09.2022. 0:00:00 and 11.09.2022. 23:59:59-
-    // It also handles situation where end of the month is in the middle of the week. Neat!
-    calculateDayEpoch(_epoch, &_startWeekEpoch, &_endWeekEpoch);
+    // Now, tricky stuff. But this function can save us! It calculates epoch time of start and end of the selected day. Easy!
+    calculateDayEpoch(_epoch, &_startDayEpoch, &_endDayEpoch);
 
     // Now get one line from the file with login and logut epoch times and parse it using sscanf function.
     // Function for logging (addLog) and this function MUST have same structure!!!
-    char _oneLine[250];
+    char _oneLine[50];
     while (_myFile.available())
     {
         char c = 0;
@@ -741,14 +741,21 @@ int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t
         _oneLine[k] = 0;
 
         // If function finds both times (login and logout), it can calculate work hours between logs.
-        if (sscanf(_oneLine, "%lu; %lu;", &_login, &_logout) == 2)
+        int _dataFound = 0;
+        _dataFound = sscanf(_oneLine, "%lu; %lu;", &_login, &_logout);
+        if (_dataFound > 0)
         {
             // Just use times that matches start and end of the current day, ingore anything else.
-            if ((_login >= _startWeekEpoch) && (_login <= _endWeekEpoch) && (_logout <= _endWeekEpoch) && (_logout >= _startWeekEpoch))
+            if ((_login >= _startDayEpoch) && (_login <= _endDayEpoch) && (_logout <= _endDayEpoch) && (_logout >= _startDayEpoch) && (_dataFound == 2))
             {
                 _dailyHours += (_logout - _login);
                 _lastTimeLogout = _logout;
                 if (_firstTimeLogin == -1) _firstTimeLogin = _login;
+            }
+            else if ((_login >= _startDayEpoch) && (_login <= _endDayEpoch) && (_dataFound == 1) && (_logout == 0))
+            {
+                // If someone forgot to logout, there will be only one enrty and that's for login, logut will be missing
+                if (_missedLogutFlag != NULL) *_missedLogutFlag = 1;
             }
         }
     }
@@ -805,7 +812,7 @@ int Logging::createDailyReport()
     // For filename and path
     char _pathStr[250];
 
-    // For time and date struct
+    // Struct for time and date
     struct tm _myTime;
 
     // For epoch from the RTC
@@ -837,8 +844,16 @@ int Logging::createDailyReport()
         int32_t _lastLogoutEpoch;
         int32_t _workHours;
         int32_t _overtime = 0;
+        int _missedLogout = 0;
+        char _timestampLoginStr[30];
+        char _timestampLogoutStr[30];
 
-        _workHours = getEmployeeDailyHours(_e->ID, _dailyReportEpoch, &_firstLoginEpoch, &_lastLogoutEpoch);
+        // Get working hours data from the specific employee
+        _workHours = getEmployeeDailyHours(_e->ID, _dailyReportEpoch, &_firstLoginEpoch, &_lastLogoutEpoch, &_missedLogout);
+
+        // Create timestamp strings for login and logout times
+        createTimeStampFromEpoch(_timestampLoginStr, _firstLoginEpoch);
+        createTimeStampFromEpoch(_timestampLogoutStr, _lastLogoutEpoch);
 
         // Create a path and a filename for the report
         sprintf(_pathStr, "/%s/%s%s%llu/%d/%s_%04d_%02d_report.csv", DEFAULT_FOLDER_NAME, &(_e->firstName), &(_e->lastName),
@@ -850,7 +865,7 @@ int Logging::createDailyReport()
             // Try to create the file, if file create failed, something is wrong, abort, abort!
             if (_myFile.open(_pathStr, O_CREAT | O_RDWR))
             {
-                _myFile.println("Time; Date; Work Time; Overtime;");
+                _myFile.println("DOW; Time; Date; First Login; Last Logout; Work Time; Overtime; Missed logout;");
                 _myFile.close();
             }
         }
@@ -862,20 +877,14 @@ int Logging::createDailyReport()
         _myFile.seekEnd();
 
         // Calculate overtime hours
-        // If it's saturday or sunday, all work hours are overtime
-        if (_myTime.tm_wday == 6 || _myTime.tm_wday == 0) _overtime = _workHours;
+        // overtimeHours defines how much workhours are allowed in the specific workday. Defined in dataTypes.h
+        _overtime = _workHours - overtimeHours[_myTime.tm_wday] * 60 * 60;
 
-        // If it's friday, more than 4 hours are overtime
-        if (_myTime.tm_wday == 5) _overtime = _workHours - (4 * 60 * 60);
-
-        // Any other day, overtime is anything more than 9 horus
-        if (_myTime.tm_wday > 0 && _myTime.tm_wday < 5) _overtime = _workHours - (9 * 60 * 60);
-        
         // No negative overtime.
         if (_overtime < 0) _overtime = 0;
 
-        // Write the data into the file.
-        sprintf(_pathStr, "%02d:%02d:%02d;%02d/%02d/%04d;%02d:%02d:%02d;%02d:%02d:%02d;", _myTime.tm_hour, _myTime.tm_min, _myTime.tm_sec, _myTime.tm_mday, _myTime.tm_mon + 1, _myTime.tm_year + 1900, _workHours / 3600, _workHours / 60 % 60, _workHours % 60, _overtime / 3600, _overtime / 60 % 60, _overtime % 60);
+        // Write one line of the data into the file.
+        sprintf(_pathStr, "%s;%02d:%02d:%02d;%02d/%02d/%04d;%s;%s;%02d:%02d:%02d;%02d:%02d:%02d;%c", wdayName[_myTime.tm_wday], _myTime.tm_hour, _myTime.tm_min, _myTime.tm_sec, _myTime.tm_mday, _myTime.tm_mon + 1, _myTime.tm_year + 1900, _timestampLoginStr, _timestampLogoutStr, _workHours / 3600, _workHours / 60 % 60, _workHours % 60, _overtime / 3600, _overtime / 60 % 60, _overtime % 60, _missedLogout == 1?'Y':' ');
         _myFile.println(_pathStr);
 
         // Close the file (avoid memory leak at all cost!)
@@ -883,4 +892,76 @@ int Logging::createDailyReport()
     }
 
     return 1;
+}
+
+
+int Logging::getEmployeeFile(SdFile *_myFile, struct employeeData *_employee, int _month, int _year, int _rawFlag)
+{
+    // Array for path to the file
+    char _path[250];
+
+    // First check if the micro SD card can be initialized
+    if (!sd.begin(15, SD_SCK_MHZ(10))) return 0;
+
+    // If micro SD card init is ok, go to the root of the micro SD card
+    if (!sd.chdir(true)) return 0;
+
+    // Now make a path to the file
+    // Folder structure is like this: [DEFAULT_FOLDER_NAME]\[FirstName][LastName][ID]\[YEAR]\[FirstName]_[Year]_[Month]_[int or report].csv
+    sprintf(_path, "%s/%s%s%llu/%04d/%s_%04d_%02d_%s.csv", DEFAULT_FOLDER_NAME, _employee->firstName, _employee->lastName, (unsigned long long)(_employee->ID), _year, _employee->firstName, _year, _month, _rawFlag?"int":"report");
+
+    // Now try to open a file
+    return (_myFile->open(_path, O_RDONLY));
+}
+
+int Logging::findLastLog(struct employeeData *_e, int32_t *_login, int32_t *_logout)
+{
+    // Array for one line in file
+    char _oneLine[550];
+
+    // Needed for file handling
+    SdFile _myFile;
+
+    // Temp variables for last login / logout times
+    unsigned long _log1 = 0;
+    unsigned long _log2 = 0;
+
+    // First check if the micro SD card can be initialized
+    if (!sd.begin(15, SD_SCK_MHZ(10))) return 0;
+
+    // If micro SD card init is ok, go to the root of the micro SD card
+    if (!sd.chdir(true)) return 0;
+
+    // Find the file
+    if (getEmployeeFile(&_myFile, _e, _ink->rtcGetMonth(), _ink->rtcGetYear(), 1))
+    {
+        // Go to the last row in the file
+        char _oneLine[50];
+        while (_myFile.available())
+        {
+            char c = 0;
+            int k = 0;
+            while (c != '\n' && _myFile.available())
+            {
+                c = _myFile.read();
+                _oneLine[k++] = c;
+            }
+            _oneLine[k] = 0;
+        }
+
+        // Clost the file
+        _myFile.close();
+
+        // Parse the data
+        sscanf(_oneLine, "%llu; %llu", &_log1, &_log2);
+
+        // Save the data
+        if (_login != NULL) *_login = _log1;
+        if (_logout != NULL) *_logout = _log2;
+
+        // Retrun 1 for success
+        return 1;
+    }
+
+    return 0;
 }

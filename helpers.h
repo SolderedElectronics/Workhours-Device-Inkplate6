@@ -13,5 +13,6 @@ int calculateWeekdayEpochs(int32_t _currentEpoch, int32_t *_startWeekEpoch, int3
 int calculateDayEpoch(int32_t _currentEpoch, int32_t *_startDayEpoch, int32_t *_endDayEpoch);
 void fixHTTPResponseText(char *_c);
 char* createImagePath(struct employeeData _e, char *_buffer);
+void createTimeStampFromEpoch(char *_str, int32_t _epoch);
 
 #endif

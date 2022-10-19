@@ -38,17 +38,12 @@ IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);   // optional
 IPAddress secondaryDNS(8, 8, 4, 4); // optional
 
-const char *DOWStr[] = {"SUN", "MON", "TUE", "WEN", "THU", "FRI", "SAT"};
-
 char ssid[] = "";
 char pass[] = "";
 time_t last_scan = 0, epoch = 0, log_shown = 0;
 uint32_t tagID = 0;
 uint8_t buffer[16], prev_hours = 0, prev_minutes = 0;
 bool change_needed = 1, login_screen_shown = 0;
-
-const char wday_name[7][10] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-const char mon_name[12][4] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 struct employeeData *workers = NULL;
 struct employeeData *curr_worker = NULL;
@@ -64,7 +59,7 @@ void setup()
     display.sdCardInit();
     display.setFont(&Inter16pt7b);
     display.setCursor(10, 30);
-    //display.pinModeMCP(0, OUTPUT);
+    // display.pinModeMCP(0, OUTPUT);
 
     if (!sd.begin(15, SD_SCK_MHZ(10)))
     {
@@ -76,8 +71,8 @@ void setup()
 
     if (!WiFi.config(localIP, gateway, subnet, primaryDNS, secondaryDNS))
     {
-         display.println("STA Failed to configure, please reset Inkplate! If error keeps to repeat, try to cnofigure "
-                         "STA in different way or use another IP address");
+        display.println("STA Failed to configure, please reset Inkplate! If error keeps to repeat, try to cnofigure "
+                        "STA in different way or use another IP address");
     }
 
     WiFi.mode(WIFI_STA);
@@ -407,19 +402,20 @@ void buzz(uint8_t n)
 {
     for (int i = 0; i < n; i++)
     {
-        //display.digitalWriteMCP(0, HIGH);
+        // display.digitalWriteMCP(0, HIGH);
         delay(150);
-        //display.digitalWriteMCP(0, LOW);
+        // display.digitalWriteMCP(0, LOW);
         delay(150);
     }
 }
 
 void doServer(WiFiClient *client)
 {
+    // Update the RTC data (needed by the code below)
+    display.rtcGetRtcData();
+
     char buffer[256];
     client->read((uint8_t *)buffer, 256);
-    // Serial.println(buffer);
-    // Serial.println("\n\n");
     if (strstr(buffer, "style.css"))
     {
         client->println("HTTP/1.1 200 OK");
@@ -731,7 +727,6 @@ void doServer(WiFiClient *client)
 
         uint64_t idToRemove;
 
-        // Serial.println(buffer);
         char *_subString = strstr(buffer, "/?remove");
         if (_subString != NULL)
         {
@@ -740,10 +735,6 @@ void doServer(WiFiClient *client)
                 myList.removeEmployee(idToRemove);
                 logger.updateEmployeeFile();
             }
-        }
-        else
-        {
-            // Serial.println("remove failed");
         }
 
         client->println("<!DOCTYPE html>");
@@ -770,64 +761,76 @@ void doServer(WiFiClient *client)
         client->println(" </body>");
         client->println("</html>");
     }
-    else if (strstr(buffer, "/monthly/"))
+    else if (strstr(buffer, "/monthly/?"))
     {
-        client->println("HTTP/1.1 200 OK");
-        client->println("Content-type:text/html");
-        client->println("Connection: close");
-        client->println();
-        client->println("<!DOCTYPE html>");
-        client->println(" <html>");
-        client->println(" <head>");
-        client->println("   <title>Monthly review</title>");
-        client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-        client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
-        client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
-        client->println(" </head>");
-        client->println(" <body>");
-        client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
-        client->println("  </div>");
-        client->println("  <div class=\"content\">");
-        client->println("    <div class=\"card-grid\">");
-        client->println("      <div class=\"card\">");
-        if (strstr(buffer, "="))
-        {
-            char *wname = strstr(buffer, "=") + 1;
-            strstr(wname, " ") != 0 ? *(strstr(wname, " ")) = '\0' : 0;
+        // This block of code will send the needed file to the client.
+        // It will send report file of a worker from the microSD card
 
-            if ((sd).begin(15, SD_SCK_MHZ(25)))
+        // Try to find the start of the request
+        char *startStr = strstr(buffer, "/monthly/?");
+
+        // Found a start of the HTTP GET request with "/monthly/?" string in it? Good, now get the data from it.
+        if (startStr != NULL)
+        {
+            // Variables for storing the data from the HTTP GET req.
+            struct employeeData employee;
+            int month = 0;
+            int year = 0;
+            int rawDataFlag = 0;
+
+            // Send a response
+            client->println("HTTP/1.1 200 OK");
+
+            // HTTP GET req. will look something like this:
+            // /monthly/?worker=[FirstName]_[LastName]_[ID]&month=[Year]-[Month]&rawData=1
+            // There should me minimum 5 arguments (first name, last name, ID, Year and month, rawDataFlag is optional)
+            if (sscanf(startStr, "/monthly/?worker=%[^'_']_%[^'_']_%llu&month=%d-%d&rawData=%d", employee.firstName,
+                       employee.lastName, (unsigned long long *)&(employee.ID), &year, &month, &rawDataFlag) >= 5)
             {
-                File dir;
-                File tempFile;
-                char strTemp[56];
-                dir.open("/");
-                while (tempFile.openNext(&dir, O_RDONLY))
+                SdFile myFile;
+
+                // Try to find needed file on the micro SD Card.
+                if (logger.getEmployeeFile(&myFile, &employee, month, year, rawDataFlag))
                 {
-                    memset(strTemp, 0, 56 * sizeof(char));
-                    tempFile.getName(strTemp, 56);
-                    // Serial.println(strTemp);
-                    if (strstr(strTemp, ".csv") && strstr(strTemp, wname))
+                    // We need to send the file and for client to know that, we need to set proper Content-Type and
+                    // Content Length.
+                    client->println("Content-Type: application/octet-stream");
+
+                    // File name will be [FirstName]_[LastName]_[ID]_[year]_[month].csv
+                    client->printf("Content-Disposition: attachment; filename=%s_%s_%llu_%d_%d.csv\r\n",
+                                   employee.firstName, employee.lastName, (unsigned long long)(employee.ID), year,
+                                   month);
+                    client->printf("Content-Length: %d\r\n", myFile.fileSize());
+                    client->println("Connection: close");
+                    client->println();
+
+                    // Read the file until you hit the end.
+                    while (myFile.available())
                     {
-                        client->print(F("        <a href='/download/"));
-                        client->print(strTemp);
-                        client->print(F("' style='color:#582C83;margin-bottom:30px;'>"));
-                        client->print(strTemp);
-                        client->println(F("</a></br>"));
+                        client->write(myFile.read());
                     }
-                    tempFile.close();
+
+                    // Close the file -> Very importnant!
+                    myFile.close();
                 }
-                dir.close();
+                else
+                {
+                    // Send error message if the file is not found.
+                    client->println("Content-type:text/html");
+                    client->println("Connection: close");
+                    client->println();
+                    client->println("Such file / entry does not exists on micro SD Card!");
+                }
+            }
+            else
+            {
+                // Send an error message if there is a problem with the data inserted.
+                client->println("Content-type:text/html");
+                client->println("Connection: close");
+                client->println();
+                client->println("Wrong / unvalid data is inserted!");
             }
         }
-
-        client->println("        <a href=\"/\"> <button>Home</button> </a>");
-        client->println("        <a href=\"/monthly\"> <button>Back</button> </a>");
-        client->println("      </div>");
-        client->println("    </div>");
-        client->println("  </div>");
-        client->println(" </body>");
-        client->println("</html>");
     }
     else if (strstr(buffer, "/monthly"))
     {
@@ -853,26 +856,44 @@ void doServer(WiFiClient *client)
         client->println("        <form action=\"/monthly/\" method=\"GET\">");
         client->println("            <label for=\"worker\">Choose worker:</label>");
         client->println("            <select name=\"worker\" id=\"worker\">");
-        curr_worker = workers;
-        if (curr_worker == NULL)
+
+        // Get the number of the employees.
+        int numberOfEmloyees = myList.numberOfElements();
+
+        // No employees? Send error message.
+        if (numberOfEmloyees == 0)
         {
-            client->println(
-                "               <option value=\"0\" selected=\"selected\" hidden=\"hidden\">No workers yet!</option>");
+            client->println("               <option value=\"0\" selected=\"selected\" hidden=\"hidden\">No "
+                            "employees in the list</option>");
             client->println("            </select>");
             client->println("            <br>");
             client->println("        </form>");
         }
         else
         {
-            while (curr_worker != NULL)
+            // If there are some employees, list them.
+            for (int i = 0; i < numberOfEmloyees; i++)
             {
-                char tmp[86];
-                sprintf(tmp, "               <option value=\"%s_%s\">%s %s</option>", curr_worker->lastName,
-                        curr_worker->firstName, curr_worker->firstName, curr_worker->lastName);
-                client->println(tmp);
-                curr_worker = curr_worker->next;
+                // Struct for storing employee address in the linked list.
+                struct employeeData *currentEmployee;
+
+                // Get data of specific employee.
+                currentEmployee = myList.getEmployee(i);
+
+                // Add entry to the drop down list.
+                client->printf("               <option value=\"%s_%s_%llu\">%s %s (%llu)</option>",
+                        currentEmployee->firstName, currentEmployee->lastName,
+                        (unsigned long long)(currentEmployee->ID), currentEmployee->firstName,
+                        currentEmployee->lastName, (unsigned long long)(currentEmployee->ID));
             }
             client->println("            </select>");
+            client->println("            <br>");
+            client->println("<label for=\"month\">Choose month and year </label>");
+            client->printf("<input type=\"month\" id=\"month\" name=\"month\" value=\"%04d-%02d\">\r\n",
+                           display.rtcGetYear(), display.rtcGetMonth());
+            client->println("<br><br>");
+            client->println("<label for=\"rawData\">Export RAW Login Epoch data </label>");
+            client->println("<input type=\"checkbox\" id=\"rawData\" name=\"rawData\" value=\"1\">");
             client->println("            <br>");
             client->println("            <input type =\"submit\" value =\"Select\">");
             client->println("        </form>");
@@ -886,163 +907,94 @@ void doServer(WiFiClient *client)
     }
     else if (strstr(buffer, "/byworker/?"))
     {
+        // If download of the file is requested, first send 200 OK.
         client->println("HTTP/1.1 200 OK");
-        client->println("Content-type:text/html");
-        client->println("Connection: close");
-        client->println();
-        char *temp;
-        temp = strstr(buffer, "&");
-        *temp = ' ';
-        temp = strstr(buffer, "=");
-        *temp = ' ';
-        temp = strstr(buffer, "=");
-        *temp = ' ';
-        *(temp + 1) = ' ';
-        *(temp + 2) = ' ';
 
-        temp = strstr(buffer, "/?") + 7;
-        int mon, year;
-        sscanf(temp, "%d year   %d", &mon, &year);
-        char wanted[15];
-        sprintf(wanted, "%d_%d.csv", mon, year);
+        // Get the start of the response of the HTTP GET
+        char *startStr = strstr(buffer, "/byworker/?");
 
-        client->println("<!DOCTYPE html>");
-        client->println(" <html>");
-        client->println(" <head>");
-        client->println("   <title>Worktime</title>");
-        client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-        client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
-        client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
-        client->println(" </head>");
-        client->println(" <body>");
-        client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
-        client->println("  </div>");
-        client->println("  <div class=\"content\">");
-        client->println("    <div class=\"card-grid\">");
-        client->println("      <div class=\"card\">");
-
-        client->println("        <form action=\"/byworker/\" method=\"GET\">");
-        client->println("          <p>");
-        client->println("            <label for=\"month\">Choose month:</label>");
-        client->print("            <select name=\"month\" id=\"month\" value=\"");
-        client->print(display.rtcGetMonth());
-        client->println("\">");
-        client->println("               <option value=\"1\">1</option>");
-        client->println("               <option value=\"2\">2</option>");
-        client->println("               <option value=\"3\">3</option>");
-        client->println("               <option value=\"4\">4</option>");
-        client->println("               <option value=\"5\">5</option>");
-        client->println("               <option value=\"6\">6</option>");
-        client->println("               <option value=\"7\">7</option>");
-        client->println("               <option value=\"8\">8</option>");
-        client->println("               <option value=\"9\">9</option>");
-        client->println("               <option value=\"10\">10</option>");
-        client->println("               <option value=\"11\">11</option>");
-        client->println("               <option value=\"12\">12</option>");
-        client->println("            </select>");
-        client->println("            <br>");
-        client->println("            <label for=\"year\">Year: </label>");
-        client->println("            <input type=\"text\" id=\"year\" name=\"year\" value=\"2022\">");
-        client->println("            <br>");
-        client->println("            <input type =\"submit\" value =\"Get\">");
-        client->println("        </form>");
-        client->println("        <a href=\"/\"> <button>Back</button> </a>");
-        client->println("        <br>");
-        client->println("        <a href=\"/byworker/");
-        client->println(wanted);
-        client->println("\">");
-        client->println(wanted);
-        client->println("</a>");
-        client->println("      </div>");
-        client->println("    </div>");
-        client->println("  </div>");
-        client->println(" </body>");
-        client->println("</html>");
-        /*  if ((sd).begin(15, SD_SCK_MHZ(25)))
-            {
-            File dir;
-            File tempFile;
-            char strTemp[64];
-            Serial.println(dir.open("/"));
-            while (tempFile.openNext(&dir, O_RDONLY)) {
-            memset(strTemp, 0, 64 * sizeof(char));
-            tempFile.getName(strTemp, 64);
-            if (strstr(strTemp, wanted))
-            {
-            file.open(strTemp, O_RDONLY);
-             strstr(strTemp, wanted) = '\0';
-             strstr(strTemp, "_") = ' ';
-             strstr(strTemp, "_") = ' ';
-            client->write(strTemp, strlen(strTemp));
-            client->write('\n');
-            char *ps = (char*)ps_malloc(10000);
-            memset(ps, 0, 10000 * sizeof(char));
-            file.read(ps, 10000);
-            //Serial.println(ps);
-            file.close();
-            client->write(ps, strlen(ps));
-            free(ps);
-            client->write('\n');
-            client->write('\n');
-            }
-            tempFile.close();
-            }
-            dir.close();
-            }*/
-    }
-    else if (strstr(buffer, "/byworker/"))
-    {
-        client->println("HTTP/1.1 200 OK");
-        client->println("Content-type:file/csv");
-        client->println("Connection: close");
-        client->println();
-        char *temp;
-        temp = strstr(buffer, "/byworker/") + 10;
-        char wanted[8];
-        int i = 0;
-        while (temp[i] != '.' && i < 8)
+        // If is found, start parsing the data
+        if (startStr != NULL)
         {
-            wanted[i] = temp[i];
-            i++;
-        }
-        wanted[i] = '\0';
-        // Serial.println(wanted);
-        if ((sd).begin(15, SD_SCK_MHZ(25)))
-        {
-            File dir;
-            File tempFile;
-            File file;
-            char strTemp[64];
-            dir.open("/");
-            while (tempFile.openNext(&dir, O_RDONLY))
+            // Temp variables for year and month from the HTTP GET request
+            int year;
+            int month;
+
+            // For successful parsing, two arguments must be provided in the HTTP GET request (year and month)
+            if (sscanf(startStr, "/byworker/?date=%d-%d", &year, &month) == 2)
             {
-                memset(strTemp, 0, 64 * sizeof(char));
-                tempFile.getName(strTemp, 64);
-                if (strstr(strTemp, wanted))
+                // Now get whole daily from every employee
+                // But first get how much employees there are
+                int numberOfemployees = myList.numberOfElements();
+
+                // Check if there are no employees
+                if (numberOfemployees != 0)
                 {
-                    char *pointerName = strTemp + 5;
-                    file.open(strTemp, O_RDONLY);
-                    *strstr(pointerName, "_") = ' ';
-                    *strstr(pointerName, ".") = '\0';
-                    client->write(pointerName, strlen(pointerName));
-                    client->write('\n');
-                    char *ps = (char *)ps_malloc(10000);
-                    memset(ps, 0, 10000 * sizeof(char));
-                    file.read(ps, 10000);
-                    // Serial.println(ps);
-                    file.close();
-                    client->write(ps, strlen(ps));
-                    free(ps);
-                    client->write('\n');
-                    client->write('\n');
+                    struct employeeData *employee;
+
+                    // Tell the client that we are going to send a lot of data, and we do not know how much (so no Content-Length argument now)
+                    client->println("Content-Type: application/octet-stream");
+
+                    // File name will be Full_Monthly_Report_[year]_[month].csv
+                    client->printf("Content-Disposition: attachment; filename=Full_Monthy_Report_%d_%d.csv\r\n", year, month);
+                    client->println("Connection: close");
+                    client->println();
+
+                    // Now we need to send the data of each employee
+                    for (int i = 0; i < numberOfemployees; i++)
+                    {
+                        SdFile myFile;
+
+                        // Get the employee data
+                        employee = myList.getEmployee(i);
+
+                        // First make a header for each employee (basic employee data)
+                        client->printf("First Name:%s  Last Name:%s  TAG ID:%llu  Department:%s\r\n", employee->firstName, employee->lastName, (unsigned long long)(employee->ID), employee->department);
+
+                        // Try to open a file with reports fot this month
+                        if (logger.getEmployeeFile(&myFile, employee, month, year, 0))
+                        {
+                            // Read the whole file and send it to the client byte-by-byte.
+                            while (myFile.available())
+                            {
+                                client->write(myFile.read());
+                            }
+                        }
+                        else
+                        {
+                            // If there is no file for this specific employee, write an error.
+                            client->println("[No data for this employee]");
+                        }
+
+                        // Make a few new lines between employees
+                        client->println("\r\n\r\n");
+
+                        // Close the file
+                        myFile.close();
+                    }
+
+                    // Print out report data
+                    client->printf("Report was created at %02d:%02d:%02d on %02d.%02d.%04d.\r\nBy Soldered Electronics", display.rtcGetHour(), display.rtcGetMinute(), display.rtcGetSecond(), display.rtcGetDay(), display.rtcGetMonth(), display.rtcGetYear());
                 }
-                tempFile.close();
+                else
+                {
+                    // No employees in the list? Send an error message
+                    client->println("Content-type:text/html");
+                    client->println("Connection: close");
+                    client->println();
+                    client->println("No employess in the list!");
+                }
             }
-            dir.close();
+            else
+            {
+                // If parsing has failed, show error message (this should not happen!)
+                client->println("Content-type:text/html");
+                client->println("Connection: close");
+                client->println();
+                client->println("Wrong data / parameters for the date!");
+            }
         }
     }
-
     else if (strstr(buffer, "/byworker"))
     {
         client->println("HTTP/1.1 200 OK");
@@ -1050,79 +1002,34 @@ void doServer(WiFiClient *client)
         client->println("Connection: close");
         client->println();
         client->println("<!DOCTYPE html>");
-        client->println(" <html>");
-        client->println(" <head>");
-        client->println("   <title>Worktime</title>");
-        client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-        client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
-        client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
-        client->println(" </head>");
-        client->println(" <body>");
-        client->println("  <div class=\"topnav\">");
+        client->println("<html>");
+        client->println("<head>");
+        client->println("<title>Worktime</title>");
+        client->println("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+        client->println("<link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
+        client->println("<link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
+        client->println("</head>");
+        client->println("<body>");
+        client->println("<div class=\"topnav\">");
         client->println("    <h1>Worktime</h1>");
-        client->println("  </div>");
-        client->println("  <div class=\"content\">");
+        client->println("</div>");
+        client->println("<div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
-        client->println("      <div class=\"card\">");
+        client->println("    <div class=\"card\">");
         client->println("        <form action=\"/byworker/\" method=\"GET\">");
-        client->println("          <p>");
-        client->println("            <label for=\"month\">Choose month:</label>");
-        client->print("            <select name=\"month\" id=\"month\" value=\"");
-        client->print(display.rtcGetMonth());
-        client->println("\">");
-        client->println("               <option value=\"1\">1</option>");
-        client->println("               <option value=\"2\">2</option>");
-        client->println("               <option value=\"3\">3</option>");
-        client->println("               <option value=\"4\">4</option>");
-        client->println("               <option value=\"5\">5</option>");
-        client->println("               <option value=\"6\">6</option>");
-        client->println("               <option value=\"7\">7</option>");
-        client->println("               <option value=\"8\">8</option>");
-        client->println("               <option value=\"9\">9</option>");
-        client->println("               <option value=\"10\">10</option>");
-        client->println("               <option value=\"11\">11</option>");
-        client->println("               <option value=\"12\">12</option>");
-        client->println("            </select>");
-        client->println("            <br>");
-        client->println("            <label for=\"year\">Year: </label>");
-        client->println("            <input type=\"text\" id=\"year\" name=\"year\" value=\"2022\">");
+        client->println("        <p>");
+        client->println("            <label for=\"calendar\">Select month and year for report </label>");
+        client->printf("            <input type=\"month\" id=\"date\" name=\"date\" value=\"%04d-%02d\">\r\n", display.rtcGetYear(), display.rtcGetMonth());
         client->println("            <br>");
         client->println("            <input type =\"submit\" value =\"Get\">");
         client->println("        </form>");
         client->println("        <a href=\"/\"> <button>Back</button> </a>");
-        client->println("      </div>");
         client->println("    </div>");
-        client->println("  </div>");
-        client->println(" </body>");
+        client->println("    </div>");
+        client->println("</div>");
+        client->println("</body>");
         client->println("</html>");
     }
-
-    else if (strstr(buffer, "/download"))
-    {
-        client->println("HTTP/1.1 200 OK");
-        client->println("Content-type:file/csv");
-        client->println("Connection: close");
-        client->println();
-        sd.begin(15, SD_SCK_MHZ(25));
-        char *temp = strstr(buffer, "/download/") + 9;
-        *(strstr(temp, ".") + 4) = '\0';
-        char fileName[48];
-        strcpy(fileName, temp);
-        // Serial.print("File name: ");
-        // Serial.println(fileName);
-        char *ps = (char *)ps_malloc(10000);
-        memset(ps, 0, 10000 * sizeof(char));
-        // Serial.print("File opened: ");
-        File file;
-        // Serial.println(file.open(fileName, FILE_READ));
-        file.read(ps, 10000);
-        // Serial.print("PS: ");
-        // Serial.println(ps);
-        file.close();
-        client->write(ps, strlen(ps));
-        free(ps);
-    }
-
     else if (strstr(buffer, "/remove"))
     {
         client->println("HTTP/1.1 200 OK");
@@ -1181,7 +1088,102 @@ void doServer(WiFiClient *client)
         client->println(" </body>");
         client->println("</html>");
     }
+    else if (strstr(buffer, "/api"))
+    {
+        // Send response (200 OK)
+        client->println("HTTP/1.1 200 OK");
+        client->println("Content-type:text/plain");
+        client->println("Connection: close");
+        client->println();
 
+        // This is block of code for the API interface
+        // Check what kind of data is needed (added for future add-ons)
+        if (strstr(buffer, "/getWeekHours"))
+        {
+            // Get the start of the HTTP GET Request
+            char *startStr = strstr(buffer, "/getWeekHours");
+
+            // If the start is found, get the TAG ID
+            if (startStr != NULL)
+            {
+                unsigned long long tagID;
+
+                if (sscanf(startStr, "/getWeekHours/%llu", &tagID) == 1)
+                {
+                    // Get employee data by the TAG ID
+                    struct employeeData *employee;
+                    employee = myList.getEmployeeByID(tagID);
+
+                    if (employee != NULL)
+                    {
+                        int32_t weekHours;
+                        int32_t dayHours;
+                        int32_t lastLogin = 0;
+                        int32_t lastLogout = 0;
+                        int32_t lastLogoutInList = 0;
+
+                        // Arrays for timestamp
+                        char loginTimestampStr[30];
+                        char logoutTimestampStr[30];
+
+                        // Get weekly working hours
+
+                        // First update the RTC
+                        display.rtcGetRtcData();
+
+                        // Get employee workhours (search employee by ID).
+                        weekHours = logger.getEmployeeWeekHours(tagID, display.rtcGetEpoch());
+                        dayHours = logger.getEmployeeDailyHours(tagID, display.rtcGetEpoch(), &lastLogin, &lastLogout);
+
+                        // Get the last log data (to check if the logout is done)
+                        logger.findLastLog(employee, NULL, &lastLogoutInList);
+
+                        // Send data to the client. Note that is different calculation if logout is done.
+                        if (lastLogoutInList == 0)
+                        {
+                            // Add current time to the dayhours and weekhours (because logout is not done yet)
+                            dayHours += (display.rtcGetEpoch() - lastLogout);
+                            weekHours += (display.rtcGetEpoch() - lastLogout);
+
+                            // Make string timestamp
+                            createTimeStampFromEpoch(loginTimestampStr, lastLogin);
+
+                            // Send the data to the client
+                            client->printf("Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: %s\r\nLogout: Not Done Yet\r\n", dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600, weekHours / 60 % 60, weekHours % 60, loginTimestampStr);
+                        }
+                        else
+                        {
+                            // Make string timestamp
+                            createTimeStampFromEpoch(loginTimestampStr, lastLogin);
+                            createTimeStampFromEpoch(logoutTimestampStr, lastLogout);
+                            client->printf("Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: %s\r\nLogout: %s\r", dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600, weekHours / 60 % 60, weekHours % 60, loginTimestampStr, logoutTimestampStr);
+                        }
+                    }
+                    else
+                    {
+                        // Send error if the wrong ID is sent.
+                        client->println("Wrong API ID!");
+                    }
+                    
+                }
+                else
+                {
+                    // Send error message for the wrong API parameter
+                    client->println("Wrong API parameter!");
+                }
+            }
+            else
+            {
+                // Send error message for the wrong API request
+                client->println("Wrong API request!");
+            }
+        }
+        else
+        {
+            // Send error message for the wrong API request
+            client->println("Wrong API request!");
+        }
+    }
     else
     {
         client->println("HTTP/1.1 200 OK");

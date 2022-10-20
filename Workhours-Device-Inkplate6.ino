@@ -1205,6 +1205,7 @@ void doServer(WiFiClient *client)
                         int32_t dayHours = 0;
                         int32_t lastLogin = 0;
                         int32_t lastLogout = 0;
+                        int32_t lastLoginInList = 0;
                         int32_t lastLogoutInList = 0;
 
                         // Arrays for timestamp
@@ -1221,14 +1222,14 @@ void doServer(WiFiClient *client)
                         dayHours = logger.getEmployeeDailyHours(tagID, display.rtcGetEpoch(), &lastLogin, &lastLogout);
 
                         // Get the last log data (to check if the logout is done)
-                        if (logger.findLastLog(employee, NULL, &lastLogoutInList))
+                        if (logger.findLastLog(employee, &lastLoginInList, &lastLogoutInList))
                         {
                             // Send data to the client. Note that is different calculation if logout is done.
-                            if (lastLogoutInList == 0)
+                            if (lastLogoutInList == 0 && lastLoginInList !=0)
                             {
                                 // Add current time to the dayhours and weekhours (because logout is not done yet)
-                                dayHours += ((int32_t)(display.rtcGetEpoch()) - lastLogin);
-                                weekHours += ((int32_t)(display.rtcGetEpoch()) - lastLogin);
+                                dayHours += ((int32_t)(display.rtcGetEpoch()) - lastLoginInList);
+                                weekHours += ((int32_t)(display.rtcGetEpoch()) - lastLoginInList);
 
                                 // Make string timestamp
                                 createTimeStampFromEpoch(loginTimestampStr, lastLogin);
@@ -1247,7 +1248,7 @@ void doServer(WiFiClient *client)
                                 client->printf(
                                     "Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: %s\r\nLogout: %s\r",
                                     dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600,
-                                    weekHours / 60 % 60, weekHours % 60, loginTimestampStr, logoutTimestampStr);
+                                    weekHours / 60 % 60, weekHours % 60, lastLogin != -1?loginTimestampStr:"----", lastLogout != -1?logoutTimestampStr:"----");
                             }
                         }
                         else

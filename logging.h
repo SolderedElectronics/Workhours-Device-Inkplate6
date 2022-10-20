@@ -3,12 +3,12 @@
 
 #include "Inkplate.h"
 #include "dataTypes.h"
-#include "linkedList.h"
 #include "helpers.h"
+#include "linkedList.h"
 
 class Logging
 {
-    public:
+  public:
     Logging();
     int begin(SdFat *_s, LinkedList *_l, Inkplate *_i);
     int getEnteries(SdFile *_file);
@@ -17,16 +17,17 @@ class Logging
     int updateEmployeeFile();
     uint64_t getTagID();
     int addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w);
-    int findLastEntry(SdFile *_f, uint32_t *_epoch, uint8_t *_log);
+    int findLastEntry(SdFile *_f, int32_t *_epoch, uint8_t *_log);
     int32_t getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch);
-    int32_t getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t *_firstLogin = NULL, int32_t *_lastLogout = NULL, int *_missedLogutFlag = NULL);
+    int32_t getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t *_firstLogin = NULL,
+                                  int32_t *_lastLogout = NULL, int *_missedLogutFlag = NULL);
     void calculateNextDailyReport();
     bool isDailyReport();
     int createDailyReport();
     int getEmployeeFile(SdFile *_myFile, struct employeeData *_employee, int _month, int _year, int _rawFlag);
     int findLastLog(struct employeeData *_e, int32_t *_login, int32_t *_logout);
 
-    private:
+  private:
     struct employeeData *employees;
     SdFat *_sd;
     LinkedList *_link;

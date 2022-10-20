@@ -8,23 +8,23 @@ int calculateMonthEpochs(int32_t _currentEpoch, int32_t *_startWeekEpoch, int32_
     const time_t myEpoch = _currentEpoch;
 
     memcpy(&_myTime, localtime(&myEpoch), sizeof(_myTime));
-    
+
     _myTime.tm_hour = 0;
     _myTime.tm_min = 0;
     _myTime.tm_sec = 0;
     _myTime.tm_mday = 1;
     _myTime.tm_isdst = 0;
-    
+
     _start = mktime(&_myTime);
-    
+
     _myTime.tm_mon++;
-    
+
     _end = mktime(&_myTime);
     _end--;
-    
+
     *_startWeekEpoch = _start;
     *_endWeekEpoch = _end;
-    
+
     return 1;
 }
 
@@ -36,18 +36,18 @@ int calculateWeekdayEpochs(int32_t _currentEpoch, int32_t *_startWeekEpoch, int3
     const time_t myEpoch = _currentEpoch;
 
     memcpy(&_myTime, localtime(&myEpoch), sizeof(_myTime));
-    
+
     calculateMonthEpochs(_currentEpoch, &_startMonth, &_endMonth);
     double x = (_currentEpoch - 345600) % 604800 / 86400.0;
-    
+
     int32_t _startWeek = _currentEpoch - (x * 86400);
     int32_t _endWeek = _currentEpoch + ((6 - x + 1) * 86400) - 1;
-    
+
     if (_endWeek > _endMonth)
     {
         _endWeek -= _endWeek - _endMonth;
     }
-    
+
     if (_startWeek < _startMonth)
     {
         _startWeek -= _startWeek - _startMonth;
@@ -88,17 +88,18 @@ int calculateDayEpoch(int32_t _currentEpoch, int32_t *_startDayEpoch, int32_t *_
 void fixHTTPResponseText(char *_c)
 {
     // Try to remove escape chars from http get request and replace it with normal characters.
-    // For example, R&D will be sent with HTTP GET like R%26D. %26 means 0x026, which is & char if you look at the ASCII table.
-    // But there is one special escape char for space and that is '+', so this also needs to be converted.
+    // For example, R&D will be sent with HTTP GET like R%26D. %26 means 0x026, which is '&' char if you look at the
+    // ASCII table. But there is one special escape char for space and that is '+', so this also needs to be converted.
 
     // First find the length of the string.
     int _n = strlen(_c);
-    
+
     // Now go through the string and try to find '%' or '+' sign.
     for (int i = 0; i < _n; i++)
     {
         // Found '+' char? Great! Replace it with space.
-        if (_c[i] == '+') _c[i] = ' ';
+        if (_c[i] == '+')
+            _c[i] = ' ';
 
         // Things are little bit more complicated with the '%' sign...
         if (_c[i] == '%')
@@ -106,7 +107,7 @@ void fixHTTPResponseText(char *_c)
             // If you find the '%' sign, try to get the HEX value of it.
             int _escapeChar = 0;
 
-            // If everything went ok, now move two chars to the left. 
+            // If everything went ok, now move two chars to the left.
             if (sscanf(_c + i, "%%%2x", &_escapeChar))
             {
                 memmove(&_c[i], &_c[i + 2], _n - i);
@@ -120,20 +121,25 @@ void fixHTTPResponseText(char *_c)
     }
 }
 
-char* createImagePath(struct employeeData _e, char *_buffer)
+char *createImagePath(struct employeeData _e, char *_buffer)
 {
+    // Check if the buffer address if valid, if not, return error (NULL).
     if (_buffer == NULL)
         return NULL;
-    
-    sprintf(_buffer, "/%s/%s%s%llu/%s", DEFAULT_FOLDER_NAME, _e.firstName, _e.lastName, (unsigned long long)_e.ID, _e.image);
 
+    // Create path with sprintf.
+    sprintf(_buffer, "/%s/%s%s%llu/%s", DEFAULT_FOLDER_NAME, _e.firstName, _e.lastName, (unsigned long long)_e.ID,
+            _e.image);
+
+    // Return the buffer address.
     return _buffer;
 }
 
 void createTimeStampFromEpoch(char *_str, int32_t _epoch)
 {
     // Check if the pointer is valid, if not, return error.
-    if (_str == NULL) return;
+    if (_str == NULL)
+        return;
 
     // Struct for human human readable time and date
     struct tm _myTime;
@@ -143,5 +149,35 @@ void createTimeStampFromEpoch(char *_str, int32_t _epoch)
     memcpy(&_myTime, localtime(&_time), sizeof(_myTime));
 
     // Make an timestamp in format HH:MM:SS DD.MM.YYYYY.
-    sprintf(_str, "%02d:%02d:%02d %02d.%02d.%04d.", _myTime.tm_hour, _myTime.tm_min, _myTime.tm_sec, _myTime.tm_mday, _myTime.tm_mon + 1, _myTime.tm_year + 1900);
+    sprintf(_str, "%02d:%02d:%02d %02d.%02d.%04d.", _myTime.tm_hour, _myTime.tm_min, _myTime.tm_sec, _myTime.tm_mday,
+            _myTime.tm_mon + 1, _myTime.tm_year + 1900);
+}
+
+int readOneLineFromFile(SdFile *_myFile, char *_buffer, int _n)
+{
+    // Check if the buffer address is a vaild address. If not, return 0.
+    if (_buffer == NULL)
+        return 0;
+
+    // Check if the address for the file is vaild. Again, if not, retrun an error.
+    if (_myFile == NULL)
+        return 0;
+
+    // Check if the max size of the one line valid. If not, retrun an error.
+    if (_n <= 0)
+        return 0;
+
+    // Go trough the file and try to find new line or EOF and copy every char into buffer while doing that.
+    char c = 0;
+    int k = 0;
+    while ((c != '\n') && (_myFile->available()) && (k < _n))
+    {
+        c = _myFile->read();
+        _buffer[k++] = c;
+    }
+
+    // Add terminating char at the end of the string.
+    _buffer[k] = 0;
+
+    return 1;
 }

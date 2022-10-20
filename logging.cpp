@@ -21,7 +21,7 @@ int Logging::begin(SdFat *_s, LinkedList *_l, Inkplate *_i)
     // Init uSD card
     if (!_sd->begin(15, SD_SCK_MHZ(10)))
     {
-        //Serial.println("Failed to init uSD");
+        // Serial.println("Failed to init uSD");
         return 0;
     }
 
@@ -31,7 +31,7 @@ int Logging::begin(SdFat *_s, LinkedList *_l, Inkplate *_i)
         if (!_sd->mkdir(DEFAULT_FOLDER_NAME))
         {
             // Ooops, something went wrong... uSD card is full, or it's corrupted.
-            //Serial.println("Failed to make a folder");
+            // Serial.println("Failed to make a folder");
             return 0;
         }
     }
@@ -39,7 +39,7 @@ int Logging::begin(SdFat *_s, LinkedList *_l, Inkplate *_i)
     // Now change to default directory / folder for this device. If you can't, card is corrupted.
     if (!_sd->chdir(DEFAULT_FOLDER_NAME))
     {
-        //Serial.println("Change dir failed");
+        // Serial.println("Change dir failed");
         return 0;
     }
 
@@ -63,7 +63,7 @@ int Logging::begin(SdFat *_s, LinkedList *_l, Inkplate *_i)
     if (!_file.open("workers.csv", FILE_READ))
     {
         // Again, this should never happen!
-        //Serial.println("Failed to open workers.csv");
+        // Serial.println("Failed to open workers.csv");
         return 0;
     }
 
@@ -142,7 +142,8 @@ int Logging::fillEmployees(SdFile *_file)
 
         // Parse it using sscanf function. %[^';'] means that semicolon will terminate the string. For successful
         // parsing, sscanf() must find 4 variables / arrays.
-        if (sscanf(oneLine, "%[^';']; %[^';']; %[^';']; %[^';']; %[^';']; \r\n", ime, prezime, id, department, slika) == 5)
+        if (sscanf(oneLine, "%[^';']; %[^';']; %[^';']; %[^';']; %[^';']; \r\n", ime, prezime, id, department, slika) ==
+            5)
         {
             _link->addEmployee(ime, prezime, atoi(id), slika, department);
         }
@@ -234,7 +235,7 @@ int Logging::updateEmployeeFile()
     if (!sd.begin(15, SD_SCK_MHZ(10)))
     {
         // Init has failed. Wrong connections, bad uSD card, wrong speed, wrong format?
-        //Serial.println("Failed to init uSD");
+        // Serial.println("Failed to init uSD");
         return 0;
     }
 
@@ -274,8 +275,8 @@ int Logging::updateEmployeeFile()
         char _oneRow[500];
 
         // Create one line of .csv file filled with data.
-        sprintf(_oneRow, "%s; %s; %llu; %s; %s;\r\n", _list->firstName, _list->lastName, (unsigned long long)(_list->ID),
-                _list->department, _list->image);
+        sprintf(_oneRow, "%s; %s; %llu; %s; %s;\r\n", _list->firstName, _list->lastName,
+                (unsigned long long)(_list->ID), _list->department, _list->image);
 
         // Write that line to the file on uSD.
         _file.print(_oneRow);
@@ -376,7 +377,8 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
 
                 // Create filename. File name looks something like this: FirstName_Year_Month_int.
                 // For example: Harry_2022_09_int.csv
-                sprintf(filename, "%s_%04d_%02d_int.csv", _employee->firstName, _myTime.tm_year + 1900, _myTime.tm_mon + 1);
+                sprintf(filename, "%s_%04d_%02d_int.csv", _employee->firstName, _myTime.tm_year + 1900,
+                        _myTime.tm_mon + 1);
 
                 // First check if this filename exists already. If not create it and make a header in the file (header
                 // just names columns in the .csv file).
@@ -385,7 +387,7 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
                     // File doesn't exists, create it and make a header!
                     if (myFile.open(filename, O_CREAT | O_WRITE))
                     {
-                        myFile.println("LOGIN EPOCH; LOGOUT EPOCH;");
+                        myFile.println(LOGGING_RAW_FILE_HEADER);
                         myFile.close();
                     }
                 }
@@ -395,7 +397,7 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
 
                 // After uSD init and the file has been opened, try to find last login/logout data on uSD card of this
                 // employee.
-                uint32_t _lastLogEpoch;
+                int32_t _lastLogEpoch;
                 uint8_t _logInOutTag;
 
                 // Read out every line of logged times and determine if the next log will be logout or login.
@@ -424,7 +426,8 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
                 int32_t _dayEndEpoch;
                 calculateDayEpoch(_epoch, &_dayStartEpoch, &_dayEndEpoch);
 
-                if (!(_lastLogEpoch >= _dayStartEpoch && _lastLogEpoch <= _dayEndEpoch) && _lastLogEpoch != 0)
+                if ((_lastLogEpoch < _dayStartEpoch) && (_lastLogEpoch < _dayEndEpoch) && (_lastLogEpoch != 0) &&
+                    (_logInOutTag == LOGGING_TAG_LOGOUT))
                 {
                     // Add Special string defined in dataTypes.h
                     myFile.print(LOGGING_ERROR_STRING);
@@ -471,7 +474,7 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
     return LOGGING_TAG_ERROR;
 }
 
-int Logging::findLastEntry(SdFile *_f, uint32_t *_epoch, uint8_t *_log)
+int Logging::findLastEntry(SdFile *_f, int32_t *_epoch, uint8_t *_log)
 {
     char _prevLine[250];
     char _currentLine[250];
@@ -480,10 +483,10 @@ int Logging::findLastEntry(SdFile *_f, uint32_t *_epoch, uint8_t *_log)
     int _k = 0;
     int _resultPrev;
     int _resultCurrent;
-    unsigned long _time1 = 0;
-    unsigned long _time2 = 0;
-    unsigned long _time3 = 0;
-    unsigned long _time4 = 0;
+    unsigned long long _time1 = 0;
+    unsigned long long _time2 = 0;
+    unsigned long long _time3 = 0;
+    unsigned long long _time4 = 0;
 
     // First count how much entries are in the file.
     _f->rewind();
@@ -530,13 +533,13 @@ int Logging::findLastEntry(SdFile *_f, uint32_t *_epoch, uint8_t *_log)
     _currentLine[_k] = '\0';
 
     // Try to parse line before the last line in the file.
-    _resultPrev = sscanf(_prevLine, "%lu; %lu;", &_time1, &_time2);
+    _resultPrev = sscanf(_prevLine, "%llu; %llu", &_time1, &_time2);
 
     // If line cannot be parsed, that means it's the header of the file (so this is the first line with acctual data)
     if (_resultPrev == 0)
     {
         // Now try to see if it's a empty line or it has login data
-        _resultCurrent = sscanf(_currentLine, "%lu; %lu;", &_time3, &_time4);
+        _resultCurrent = sscanf(_currentLine, "%llu; %llu", &_time3, &_time4);
 
         if (_resultCurrent == 0 || _resultCurrent == -1)
         {
@@ -554,7 +557,7 @@ int Logging::findLastEntry(SdFile *_f, uint32_t *_epoch, uint8_t *_log)
         }
         else if (_resultCurrent == 2)
         {
-            // Login and logout data? Next data is the login data, 
+            // Login and logout data? Next data is the login data,
             *_log = LOGGING_TAG_LOGIN;
             *_epoch = _time4;
             return 1;
@@ -566,7 +569,7 @@ int Logging::findLastEntry(SdFile *_f, uint32_t *_epoch, uint8_t *_log)
     }
 
     // Try to parse current line and see what you got.
-    _resultCurrent = sscanf(_currentLine, "%lu; %lu;", &_time3, &_time4);
+    _resultCurrent = sscanf(_currentLine, "%llu; %llu;", &_time3, &_time4);
 
     if (_resultCurrent == 0)
     {
@@ -614,7 +617,7 @@ int32_t Logging::getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch)
     // Now try to get every login and logout data of this specific employee.
     int32_t _startWeekEpoch;
     int32_t _endWeekEpoch;
-    uint32_t _weekHours = 0;
+    int32_t _weekHours = 0;
 
     SdFile _myFile;
 
@@ -622,7 +625,8 @@ int32_t Logging::getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch)
     struct employeeData *_employee = _link->getEmployeeByID(_tagID);
 
     // Didn't find it? Return -1 indicating an error.
-    if (_employee == NULL) return -1;
+    if (_employee == NULL)
+        return -1;
 
     // Create human readable time and date from epoch.
     struct tm _myTime;
@@ -630,8 +634,9 @@ int32_t Logging::getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch)
 
     // Open a directory and file of this specific employee for month and year defined in the function argument.
     char _path[250];
-    sprintf(_path, "/%s/%s%s%llu/%d/%s_%04d_%02d_int.csv", DEFAULT_FOLDER_NAME, &(_employee->firstName), &(_employee->lastName),
-                        (unsigned long long)(_employee->ID), _myTime.tm_year + 1900, _employee->firstName, _myTime.tm_year + 1900, _myTime.tm_mon + 1);
+    sprintf(_path, "/%s/%s%s%llu/%d/%s_%04d_%02d_int.csv", DEFAULT_FOLDER_NAME, &(_employee->firstName),
+            &(_employee->lastName), (unsigned long long)(_employee->ID), _myTime.tm_year + 1900, _employee->firstName,
+            _myTime.tm_year + 1900, _myTime.tm_mon + 1);
 
     // Try to open this file (if it even exists). Can't do that? Throw an error (return -1)!
     if (!_myFile.open(_path))
@@ -639,9 +644,10 @@ int32_t Logging::getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch)
         return -1;
     }
 
-    // Now, tricky stuff. But this function can save us! It calculates the epoch for first day of the week and the last day of the week where current epoch lands.
-    // For example if epoch of 07.09.2022 15:05:14 is send it will return epoch for 05.09.2022. 0:00:00 and 11.09.2022. 23:59:59-
-    // It also handles situation where end of the month is in the middle of the week. Neat!
+    // Now, tricky stuff. But this function can save us! It calculates the epoch for first day of the week and the last
+    // day of the week where current epoch lands. For example if epoch of 07.09.2022 15:05:14 is send it will return
+    // epoch for 05.09.2022. 0:00:00 and 11.09.2022. 23:59:59- It also handles situation where end of the month is in
+    // the middle of the week. Neat!
     calculateWeekdayEpochs(_epoch, &_startWeekEpoch, &_endWeekEpoch);
 
     // Now get one line from the file with login and logut epoch times and parse it using sscanf function.
@@ -664,7 +670,8 @@ int32_t Logging::getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch)
         if (sscanf(_oneLine, "%lu; %lu;", &_login, &_logout) == 2)
         {
             // Just use times that matches start and end of the current week, ingore anything else.
-            if ((_login >= _startWeekEpoch) && (_login <= _endWeekEpoch) && (_logout <= _endWeekEpoch) && (_logout >= _startWeekEpoch))
+            if ((_login >= _startWeekEpoch) && (_login <= _endWeekEpoch) && (_logout <= _endWeekEpoch) &&
+                (_logout >= _startWeekEpoch))
             {
                 _weekHours += (_logout - _login);
             }
@@ -678,7 +685,8 @@ int32_t Logging::getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch)
     return _weekHours;
 }
 
-int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t *_firstLogin, int32_t *_lastLogout, int *_missedLogutFlag)
+int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t *_firstLogin, int32_t *_lastLogout,
+                                       int *_missedLogutFlag)
 {
     // First init uSD card. If uSD card can't be initialized, return -1 (error).
     if (!sd.begin(15, SD_SCK_MHZ(10)))
@@ -697,14 +705,16 @@ int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t
     int32_t _lastTimeLogout = -1;
 
     // Set missed logouts to false.
-    if (_missedLogutFlag != NULL) *_missedLogutFlag = 0;
+    if (_missedLogutFlag != NULL)
+        *_missedLogutFlag = 0;
 
     // For file handling.
     SdFile _myFile;
 
     // Get all employee data (First name, last name, tagID, etc...)
     struct employeeData *_employee = _link->getEmployeeByID(_tagID);
-    if (_employee == NULL) return -1;
+    if (_employee == NULL)
+        return -1;
 
     // Create human readable time and date from epoch.
     struct tm _myTime;
@@ -712,8 +722,9 @@ int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t
 
     // Open a directory and file of this specific employee for month and year defined in the function argument.
     char _path[250];
-    sprintf(_path, "/%s/%s%s%llu/%d/%s_%04d_%02d_int.csv", DEFAULT_FOLDER_NAME, &(_employee->firstName), &(_employee->lastName),
-                        (unsigned long long)(_employee->ID), _myTime.tm_year + 1900, _employee->firstName, _myTime.tm_year + 1900, _myTime.tm_mon + 1);
+    sprintf(_path, "/%s/%s%s%llu/%d/%s_%04d_%02d_int.csv", DEFAULT_FOLDER_NAME, &(_employee->firstName),
+            &(_employee->lastName), (unsigned long long)(_employee->ID), _myTime.tm_year + 1900, _employee->firstName,
+            _myTime.tm_year + 1900, _myTime.tm_mon + 1);
 
     // Try to open this file (if it even exists). Can't do that? Throw an error (return -1)!
     if (!_myFile.open(_path))
@@ -721,7 +732,8 @@ int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t
         return -1;
     }
 
-    // Now, tricky stuff. But this function can save us! It calculates epoch time of start and end of the selected day. Easy!
+    // Now, tricky stuff. But this function can save us! It calculates epoch time of start and end of the selected day.
+    // Easy!
     calculateDayEpoch(_epoch, &_startDayEpoch, &_endDayEpoch);
 
     // Now get one line from the file with login and logut epoch times and parse it using sscanf function.
@@ -729,16 +741,9 @@ int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t
     char _oneLine[50];
     while (_myFile.available())
     {
-        char c = 0;
-        int k = 0;
         unsigned long _login = 0;
         unsigned long _logout = 0;
-        while (c != '\n' && _myFile.available())
-        {
-            c = _myFile.read();
-            _oneLine[k++] = c;
-        }
-        _oneLine[k] = 0;
+        readOneLineFromFile(&_myFile, _oneLine, 49);
 
         // If function finds both times (login and logout), it can calculate work hours between logs.
         int _dataFound = 0;
@@ -746,34 +751,44 @@ int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t
         if (_dataFound > 0)
         {
             // Just use times that matches start and end of the current day, ingore anything else.
-            if ((_login >= _startDayEpoch) && (_login <= _endDayEpoch) && (_logout <= _endDayEpoch) && (_logout >= _startDayEpoch) && (_dataFound == 2))
+            if ((_login >= _startDayEpoch) && (_login <= _endDayEpoch) && (_logout <= _endDayEpoch) &&
+                (_logout >= _startDayEpoch) && (_dataFound == 2))
             {
                 _dailyHours += (_logout - _login);
                 _lastTimeLogout = _logout;
-                if (_firstTimeLogin == -1) _firstTimeLogin = _login;
+                if (_firstTimeLogin == -1)
+                    _firstTimeLogin = _login;
             }
             else if ((_login >= _startDayEpoch) && (_login <= _endDayEpoch) && (_dataFound == 1) && (_logout == 0))
             {
                 // If someone forgot to logout, there will be only one enrty and that's for login, logut will be missing
-                if (_missedLogutFlag != NULL) *_missedLogutFlag = 1;
+                if (_missedLogutFlag != NULL)
+                    *_missedLogutFlag = 1;
+                if (_firstTimeLogin == -1)
+                    _firstTimeLogin = _login;
             }
         }
     }
-    if (_firstLogin != NULL) (*_firstLogin) = _firstTimeLogin;
-    if (_lastLogout != NULL) (*_lastLogout) = _lastTimeLogout;
+    if (_firstLogin != NULL)
+        (*_firstLogin) = _firstTimeLogin;
+    if (_lastLogout != NULL)
+        (*_lastLogout) = _lastTimeLogout;
     _myFile.close();
     return _dailyHours;
 }
 
 void Logging::calculateNextDailyReport()
 {
-    // Calculate the next epoch for making a report for the current day (calculating first login time, last login time and work time)
+    // Calculate the next epoch for making a report for the current day (calculating first login time, last login time
+    // and work time)
 
     // First we need current date and time. We can get it from the RTC.
     _ink->rtcGetRtcData();
     int32_t _epoch = _ink->rtcGetEpoch();
 
-    // Add minute on that reading to aviod false calulating (for example, daily report is being made at 23:59:50 1.1.2022. and it's done at 23:59:52 1.1.2022.,so "next" calculation will be at 23:59:50 1.1.2022. that is acctually wrong)
+    // Add minute on that reading to aviod false calulating (for example, daily report is being made at
+    // 23:59:50 1.1.2022. and it's done at 23:59:52 1.1.2022.,so "next" calculation will be at 23:59:50 1.1.2022. that
+    // is acctually wrong)
     _epoch += 60;
 
     // Now get the end of the day epoch
@@ -783,9 +798,6 @@ void Logging::calculateNextDailyReport()
 
     // Stat calculating 10 seconds before midnight
     _dailyReportEpoch = _endDayEpoch - 9;
-
-    Serial.print("Daily report epoch:");
-    Serial.println(_dailyReportEpoch, DEC);
 }
 
 bool Logging::isDailyReport()
@@ -822,13 +834,16 @@ int Logging::createDailyReport()
     int _n = _link->numberOfElements();
 
     // Empty list? Return error.
-    if (_n == 0) return 0;
+    if (_n == 0)
+        return 0;
 
     // Try to init micro SD card. If failed, return 0 (error).
-    if (!sd.begin(15, SD_SCK_MHZ(10))) return 0;
+    if (!sd.begin(15, SD_SCK_MHZ(10)))
+        return 0;
 
     // Go to the root of the micro SD card. If failed, return error.
-    if (!sd.chdir(true)) return 0;
+    if (!sd.chdir(true))
+        return 0;
 
     // Get time and date
     _ink->rtcGetRtcData();
@@ -849,46 +864,58 @@ int Logging::createDailyReport()
         char _timestampLogoutStr[30];
 
         // Get working hours data from the specific employee
-        _workHours = getEmployeeDailyHours(_e->ID, _dailyReportEpoch, &_firstLoginEpoch, &_lastLogoutEpoch, &_missedLogout);
+        _workHours =
+            getEmployeeDailyHours(_e->ID, _dailyReportEpoch, &_firstLoginEpoch, &_lastLogoutEpoch, &_missedLogout);
 
-        // Create timestamp strings for login and logout times
-        createTimeStampFromEpoch(_timestampLoginStr, _firstLoginEpoch);
-        createTimeStampFromEpoch(_timestampLogoutStr, _lastLogoutEpoch);
-
-        // Create a path and a filename for the report
-        sprintf(_pathStr, "/%s/%s%s%llu/%d/%s_%04d_%02d_report.csv", DEFAULT_FOLDER_NAME, &(_e->firstName), &(_e->lastName),
-                        (unsigned long long)(_e->ID), _myTime.tm_year + 1900, _e->firstName, _myTime.tm_year + 1900, _myTime.tm_mon + 1);
-
-        // Check if the file even exists. If not, create it and add a header.
-        if (!sd.exists(_pathStr))
+        if (_workHours != 0)
         {
-            // Try to create the file, if file create failed, something is wrong, abort, abort!
-            if (_myFile.open(_pathStr, O_CREAT | O_RDWR))
+            // Create timestamp strings for login and logout times
+            createTimeStampFromEpoch(_timestampLoginStr, _firstLoginEpoch);
+            createTimeStampFromEpoch(_timestampLogoutStr, _lastLogoutEpoch);
+
+            // Create a path and a filename for the report
+            sprintf(_pathStr, "/%s/%s%s%llu/%d/%s_%04d_%02d_report.csv", DEFAULT_FOLDER_NAME, &(_e->firstName),
+                    &(_e->lastName), (unsigned long long)(_e->ID), _myTime.tm_year + 1900, _e->firstName,
+                    _myTime.tm_year + 1900, _myTime.tm_mon + 1);
+
+            // Check if the file even exists. If not, create it and add a header.
+            if (!sd.exists(_pathStr))
             {
-                _myFile.println("DOW; Time; Date; First Login; Last Logout; Work Time; Overtime; Missed logout;");
-                _myFile.close();
+                // Try to create the file, if file create failed, something is wrong, abort, abort!
+                if (_myFile.open(_pathStr, O_CREAT | O_RDWR))
+                {
+                    _myFile.println("DOW; Time; Date; First Login; Last Logout; Work Time; Overtime; Missed logout;");
+                    _myFile.close();
+                }
             }
+
+            // If file already exists, open it and make it available for reading as well as for writing.
+            if (!_myFile.open(_pathStr, O_RDWR))
+                return 0;
+
+            // Go to the end of the file.
+            _myFile.seekEnd();
+
+            // Calculate overtime hours
+            // overtimeHours defines how much workhours are allowed in the specific workday. Defined in dataTypes.h
+            _overtime = _workHours - overtimeHours[_myTime.tm_wday] * 60 * 60;
+
+            // No negative overtime.
+            if (_overtime < 0)
+                _overtime = 0;
+
+            // Write one line of the data into the file.
+            sprintf(_pathStr, "%s;%02d:%02d:%02d;%02d/%02d/%04d;%s;%s;%02d:%02d:%02d;%02d:%02d:%02d;%c",
+                    wdayName[_myTime.tm_wday], _myTime.tm_hour, _myTime.tm_min, _myTime.tm_sec, _myTime.tm_mday,
+                    _myTime.tm_mon + 1, _myTime.tm_year + 1900, _timestampLoginStr,
+                    _lastLogoutEpoch != -1 ? _timestampLogoutStr : LOGGING_ERROR_STRING, _workHours / 3600,
+                    _workHours / 60 % 60, _workHours % 60, _overtime / 3600, _overtime / 60 % 60, _overtime % 60,
+                    _missedLogout == 1 ? 'Y' : ' ');
+            _myFile.println(_pathStr);
+
+            // Close the file (avoid memory leak at all cost!)
+            _myFile.close();
         }
-
-        // If file already exists, open it and make it available for reading as well as for writing.
-        if (!_myFile.open(_pathStr, O_RDWR)) return 0;
-        
-        // Go to the end of the file.
-        _myFile.seekEnd();
-
-        // Calculate overtime hours
-        // overtimeHours defines how much workhours are allowed in the specific workday. Defined in dataTypes.h
-        _overtime = _workHours - overtimeHours[_myTime.tm_wday] * 60 * 60;
-
-        // No negative overtime.
-        if (_overtime < 0) _overtime = 0;
-
-        // Write one line of the data into the file.
-        sprintf(_pathStr, "%s;%02d:%02d:%02d;%02d/%02d/%04d;%s;%s;%02d:%02d:%02d;%02d:%02d:%02d;%c", wdayName[_myTime.tm_wday], _myTime.tm_hour, _myTime.tm_min, _myTime.tm_sec, _myTime.tm_mday, _myTime.tm_mon + 1, _myTime.tm_year + 1900, _timestampLoginStr, _timestampLogoutStr, _workHours / 3600, _workHours / 60 % 60, _workHours % 60, _overtime / 3600, _overtime / 60 % 60, _overtime % 60, _missedLogout == 1?'Y':' ');
-        _myFile.println(_pathStr);
-
-        // Close the file (avoid memory leak at all cost!)
-        _myFile.close();
     }
 
     return 1;
@@ -901,14 +928,19 @@ int Logging::getEmployeeFile(SdFile *_myFile, struct employeeData *_employee, in
     char _path[250];
 
     // First check if the micro SD card can be initialized
-    if (!sd.begin(15, SD_SCK_MHZ(10))) return 0;
+    if (!sd.begin(15, SD_SCK_MHZ(10)))
+        return 0;
 
     // If micro SD card init is ok, go to the root of the micro SD card
-    if (!sd.chdir(true)) return 0;
+    if (!sd.chdir(true))
+        return 0;
 
     // Now make a path to the file
-    // Folder structure is like this: [DEFAULT_FOLDER_NAME]\[FirstName][LastName][ID]\[YEAR]\[FirstName]_[Year]_[Month]_[int or report].csv
-    sprintf(_path, "%s/%s%s%llu/%04d/%s_%04d_%02d_%s.csv", DEFAULT_FOLDER_NAME, _employee->firstName, _employee->lastName, (unsigned long long)(_employee->ID), _year, _employee->firstName, _year, _month, _rawFlag?"int":"report");
+    // Folder structure is like this:
+    // [DEFAULT_FOLDER_NAME]\[FirstName][LastName][ID]\[YEAR]\[FirstName]_[Year]_[Month]_[int or report].csv
+    sprintf(_path, "%s/%s%s%llu/%04d/%s_%04d_%02d_%s.csv", DEFAULT_FOLDER_NAME, _employee->firstName,
+            _employee->lastName, (unsigned long long)(_employee->ID), _year, _employee->firstName, _year, _month,
+            _rawFlag ? "int" : "report");
 
     // Now try to open a file
     return (_myFile->open(_path, O_RDONLY));
@@ -927,10 +959,12 @@ int Logging::findLastLog(struct employeeData *_e, int32_t *_login, int32_t *_log
     unsigned long _log2 = 0;
 
     // First check if the micro SD card can be initialized
-    if (!sd.begin(15, SD_SCK_MHZ(10))) return 0;
+    if (!sd.begin(15, SD_SCK_MHZ(10)))
+        return 0;
 
     // If micro SD card init is ok, go to the root of the micro SD card
-    if (!sd.chdir(true)) return 0;
+    if (!sd.chdir(true))
+        return 0;
 
     // Find the file
     if (getEmployeeFile(&_myFile, _e, _ink->rtcGetMonth(), _ink->rtcGetYear(), 1))
@@ -939,25 +973,20 @@ int Logging::findLastLog(struct employeeData *_e, int32_t *_login, int32_t *_log
         char _oneLine[50];
         while (_myFile.available())
         {
-            char c = 0;
-            int k = 0;
-            while (c != '\n' && _myFile.available())
-            {
-                c = _myFile.read();
-                _oneLine[k++] = c;
-            }
-            _oneLine[k] = 0;
+            readOneLineFromFile(&_myFile, _oneLine, 49);
         }
 
-        // Clost the file
+        // Close the file
         _myFile.close();
 
         // Parse the data
         sscanf(_oneLine, "%llu; %llu", &_log1, &_log2);
 
         // Save the data
-        if (_login != NULL) *_login = _log1;
-        if (_logout != NULL) *_logout = _log2;
+        if (_login != NULL)
+            *_login = _log1;
+        if (_logout != NULL)
+            *_logout = _log2;
 
         // Retrun 1 for success
         return 1;

@@ -27,26 +27,22 @@ WiFiServer server(80);
 LinkedList myList;
 Logging logger;
 
-uint32_t refreshes = 0;
-time_t read_epoch;
+// Change WiFi and IP data to suit your setup.
+char ssid[] = "";
+char pass[] = "";
 // Set your Static IP address
 IPAddress localIP(192, 168, 71, 200); // IP address should be set to desired address
 // Set your Gateway IP address
 IPAddress gateway(192, 168, 71, 1); // Gateway address should match IP address
+IPAddress subnet(255, 255, 255, 0); // Subnet mask
+IPAddress primaryDNS(8, 8, 8, 8);   // Primary DNS
+IPAddress secondaryDNS(8, 8, 4, 4); // Secondary DNS
 
-IPAddress subnet(255, 255, 255, 0);
-IPAddress primaryDNS(8, 8, 8, 8);   // optional
-IPAddress secondaryDNS(8, 8, 4, 4); // optional
-
-char ssid[] = "";
-char pass[] = "";
-time_t last_scan = 0, epoch = 0, log_shown = 0;
-uint32_t tagID = 0;
-uint8_t buffer[16], prev_hours = 0, prev_minutes = 0;
+// Global variables for menu.
+uint32_t refreshes = 0;
+time_t log_shown = 0;
+uint8_t prev_minutes = 0;
 bool change_needed = 1, login_screen_shown = 0;
-
-struct employeeData *workers = NULL;
-struct employeeData *curr_worker = NULL;
 
 void setup()
 {
@@ -58,9 +54,11 @@ void setup()
     display.display(); // Put clear image on display
     display.sdCardInit();
     display.setFont(&Inter16pt7b);
-    display.setCursor(10, 30);
+    display.setCursor(0, 30);
     // display.pinModeMCP(0, OUTPUT);
 
+    display.print("Checking microSD Card");
+    display.partialUpdate(0, 1);
     if (!sd.begin(15, SD_SCK_MHZ(10)))
     {
         errorDisplay();
@@ -69,9 +67,16 @@ void setup()
             ;
     }
 
+    display.print("\nConfiguring IP Adresses");
+    display.partialUpdate(0, 0);
+
+    // High current consumption due WiFi and epaper activity causes reset of the ESP32. So wait a little bit.
+    delay(1000);
+
+    // Confingure IP Adress, subnet, DNS.
     if (!WiFi.config(localIP, gateway, subnet, primaryDNS, secondaryDNS))
     {
-        display.println("STA Failed to configure, please reset Inkplate! If error keeps to repeat, try to cnofigure "
+        display.println("\nSTA Failed to configure, please reset Inkplate! If error keeps to repeat, try to cnofigure "
                         "STA in different way or use another IP address");
     }
 
@@ -85,7 +90,7 @@ void setup()
         delay(5000);
 
         int cnt = 0;
-        display.print(F("Waiting for WiFi to connect.."));
+        display.print("\nWaiting for WiFi to connect");
         display.partialUpdate(0, 1);
         while ((WiFi.status() != WL_CONNECTED))
         {
@@ -104,14 +109,16 @@ void setup()
             }
         }
     }
-    Serial.println(WiFi.localIP());
 
     // Start server
+    display.print("\nStarting the web server");
+    display.partialUpdate(0, 1);
     server.begin();
-
+    display.print("\nGetting the time from timeAPI...");
+    display.partialUpdate(0, 1);
     if (!fetchTime())
     {
-        display.print("Can't get the time and date!");
+        display.print("Failed! Please reset the device.");
         display.partialUpdate(0, 1);
         while (true)
             ;
@@ -119,6 +126,8 @@ void setup()
 
     // Initialize library for logging functions. Send address of the SdFat object and Linked List object as parameters
     // (needed by the library).
+    display.print("\nReading data srom SD card");
+    display.partialUpdate(0, 1);
     logger.begin(&sd, &myList, &display);
     change_needed = 1;
 
@@ -139,16 +148,15 @@ void loop()
     else
     {
         WiFi.reconnect(); // If connection to Wi Fi is lost then reconnect
-        // Serial.println("Reconnecting");
     }
     if (Serial2.available()) // Check if tag is scanned
     {
         // Get data from RFID reader and conver it into integer (Tag data is sent as ASCII coded numbers).
         uint64_t tag = logger.getTagID();
 
+        // Upda
 
         // If the tag is successfully read, check if there is employee with that tag.
-        display.rtcGetRtcData();
         struct employeeData employee;
         int result = logger.addLog(tag, display.rtcGetEpoch(), employee);
 
@@ -174,6 +182,11 @@ void loop()
             // If tag is not in the list, show error message!
             if (result == LOGGING_TAG_NOT_FOUND)
                 unknownTag(tag);
+        }
+        else if (result == LOGGING_TAG_ERROR)
+        {
+            // Show error message
+            tagLoggingError();
         }
     }
 
@@ -386,14 +399,27 @@ void unknownTag(unsigned long long _tagID)
     log_shown = millis();
 }
 
+void tagLoggingError()
+{
+    buzz(2);
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setFont(&Inter16pt7b);
+    display.setCursor(50, 50);
+    display.print("Logging failed! Check with the gazda for more info");
+    change_needed = 1;
+    login_screen_shown = 1;
+    log_shown = millis();
+}
+
 void errorDisplay()
 {
     display.setTextSize(1);
     display.setFont(&Inter16pt7b);
     display.setCursor(0, 30);
     display.clearDisplay();
-    display.print(
-        "Error occured. No SD card inserted. Please insert SD Card. If you don't have SD card, please contact gazda.");
+    display.print("\nError occured. No SD card inserted. Please insert SD Card. If you don't have SD card, please "
+                  "contact gazda.");
     display.display();
     log_shown = millis();
 }
@@ -570,12 +596,6 @@ void doServer(WiFiClient *client)
     }
     else if (strstr(buffer, "/inter.woff"))
     {
-        client->println("HTTP/1.1 200 OK");
-        client->println("Content-type:file/woff");
-        client->println("Cache-Control: public, max-age=2678400");
-        client->println("Connection: close");
-        client->println();
-
         // Init micro SD Card
         sd.begin(15, SD_SCK_MHZ(10));
 
@@ -597,6 +617,13 @@ void doServer(WiFiClient *client)
             // Try to open the file
             if (file.open(_filePath, FILE_READ))
             {
+                // Send response (200 OK)
+                client->println("HTTP/1.1 200 OK");
+                client->println("Content-type:file/woff");
+                client->println("Cache-Control: public, max-age=2678400");
+                client->println("Connection: close");
+                client->println();
+
                 // Opened successfully. Get the bytes and send it to the web.
                 int size_of_file = file.size();
                 memset(ps, 0, size_of_file * sizeof(char));
@@ -792,22 +819,58 @@ void doServer(WiFiClient *client)
                 // Try to find needed file on the micro SD Card.
                 if (logger.getEmployeeFile(&myFile, &employee, month, year, rawDataFlag))
                 {
-                    // We need to send the file and for client to know that, we need to set proper Content-Type and
-                    // Content Length.
+                    // We need to send the file and for client to know that, we need to set proper Content-Type.
                     client->println("Content-Type: application/octet-stream");
 
                     // File name will be [FirstName]_[LastName]_[ID]_[year]_[month].csv
                     client->printf("Content-Disposition: attachment; filename=%s_%s_%llu_%d_%d.csv\r\n",
                                    employee.firstName, employee.lastName, (unsigned long long)(employee.ID), year,
                                    month);
-                    client->printf("Content-Length: %d\r\n", myFile.fileSize());
                     client->println("Connection: close");
                     client->println();
 
-                    // Read the file until you hit the end.
-                    while (myFile.available())
+                    // If you are trying to read all login / logout data, convert it to human readable T&D instead of
+                    // EPOCH
+                    if (rawDataFlag)
                     {
-                        client->write(myFile.read());
+                        // Send out the header
+                        client->println(LOGGING_RAW_FILE_HEADER);
+
+                        while (myFile.available())
+                        {
+                            // Buffer for one line from file
+                            char oneLine[50];
+
+                            // Get the one line from the file
+                            if (readOneLineFromFile(&myFile, oneLine, 49))
+                            {
+                                unsigned long long loginEpoch = 0;
+                                unsigned long long logoutEpoch = 0;
+
+                                // Parse one line from the file
+                                if (sscanf(oneLine, "%llu; %llu", &loginEpoch, &logoutEpoch) != 0)
+                                {
+                                    char loginEpochStr[30];
+                                    char logoutEpochStr[30];
+
+                                    // Covert epoch to timestamp
+                                    createTimeStampFromEpoch(loginEpochStr, loginEpoch);
+                                    createTimeStampFromEpoch(logoutEpochStr, logoutEpoch);
+
+                                    // Send one line to the client.
+                                    client->printf("%s; %s;\r\n", loginEpochStr,
+                                                   logoutEpoch != 0 ? logoutEpochStr : LOGGING_ERROR_STRING);
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // If normal report is needed just read the file until you hit the end.
+                        while (myFile.available())
+                        {
+                            client->write(myFile.read());
+                        }
                     }
 
                     // Close the file -> Very importnant!
@@ -882,9 +945,9 @@ void doServer(WiFiClient *client)
 
                 // Add entry to the drop down list.
                 client->printf("               <option value=\"%s_%s_%llu\">%s %s (%llu)</option>",
-                        currentEmployee->firstName, currentEmployee->lastName,
-                        (unsigned long long)(currentEmployee->ID), currentEmployee->firstName,
-                        currentEmployee->lastName, (unsigned long long)(currentEmployee->ID));
+                               currentEmployee->firstName, currentEmployee->lastName,
+                               (unsigned long long)(currentEmployee->ID), currentEmployee->firstName,
+                               currentEmployee->lastName, (unsigned long long)(currentEmployee->ID));
             }
             client->println("            </select>");
             client->println("            <br>");
@@ -892,7 +955,7 @@ void doServer(WiFiClient *client)
             client->printf("<input type=\"month\" id=\"month\" name=\"month\" value=\"%04d-%02d\">\r\n",
                            display.rtcGetYear(), display.rtcGetMonth());
             client->println("<br><br>");
-            client->println("<label for=\"rawData\">Export RAW Login Epoch data </label>");
+            client->println("<label for=\"rawData\">Export RAW Login data </label>");
             client->println("<input type=\"checkbox\" id=\"rawData\" name=\"rawData\" value=\"1\">");
             client->println("            <br>");
             client->println("            <input type =\"submit\" value =\"Select\">");
@@ -910,89 +973,109 @@ void doServer(WiFiClient *client)
         // If download of the file is requested, first send 200 OK.
         client->println("HTTP/1.1 200 OK");
 
-        // Get the start of the response of the HTTP GET
-        char *startStr = strstr(buffer, "/byworker/?");
-
-        // If is found, start parsing the data
-        if (startStr != NULL)
+        // First check if the microSD card is OK
+        if (sd.begin(15, SD_SCK_MHZ(10)))
         {
-            // Temp variables for year and month from the HTTP GET request
-            int year;
-            int month;
+            // Get the start of the response of the HTTP GET
+            char *startStr = strstr(buffer, "/byworker/?");
 
-            // For successful parsing, two arguments must be provided in the HTTP GET request (year and month)
-            if (sscanf(startStr, "/byworker/?date=%d-%d", &year, &month) == 2)
+            // If is found, start parsing the data
+            if (startStr != NULL)
             {
-                // Now get whole daily from every employee
-                // But first get how much employees there are
-                int numberOfemployees = myList.numberOfElements();
+                // Temp variables for year and month from the HTTP GET request
+                int year;
+                int month;
 
-                // Check if there are no employees
-                if (numberOfemployees != 0)
+                // For successful parsing, two arguments must be provided in the HTTP GET request (year and month)
+                if (sscanf(startStr, "/byworker/?date=%d-%d", &year, &month) == 2)
                 {
-                    struct employeeData *employee;
+                    // Now get whole daily from every employee
+                    // But first get how much employees there are
+                    int numberOfemployees = myList.numberOfElements();
 
-                    // Tell the client that we are going to send a lot of data, and we do not know how much (so no Content-Length argument now)
-                    client->println("Content-Type: application/octet-stream");
-
-                    // File name will be Full_Monthly_Report_[year]_[month].csv
-                    client->printf("Content-Disposition: attachment; filename=Full_Monthy_Report_%d_%d.csv\r\n", year, month);
-                    client->println("Connection: close");
-                    client->println();
-
-                    // Now we need to send the data of each employee
-                    for (int i = 0; i < numberOfemployees; i++)
+                    // Check if there are no employees
+                    if (numberOfemployees != 0)
                     {
-                        SdFile myFile;
+                        struct employeeData *employee;
 
-                        // Get the employee data
-                        employee = myList.getEmployee(i);
+                        // Tell the client that we are going to send a lot of data, and we do not know how much (so no
+                        // Content-Length argument now)
+                        client->println("Content-Type: application/octet-stream");
 
-                        // First make a header for each employee (basic employee data)
-                        client->printf("First Name:%s  Last Name:%s  TAG ID:%llu  Department:%s\r\n", employee->firstName, employee->lastName, (unsigned long long)(employee->ID), employee->department);
+                        // File name will be Full_Monthly_Report_[year]_[month].csv
+                        client->printf("Content-Disposition: attachment; filename=Full_Monthy_Report_%d_%d.csv\r\n",
+                                       year, month);
+                        client->println("Connection: close");
+                        client->println();
 
-                        // Try to open a file with reports fot this month
-                        if (logger.getEmployeeFile(&myFile, employee, month, year, 0))
+                        // Now we need to send the data of each employee
+                        for (int i = 0; i < numberOfemployees; i++)
                         {
-                            // Read the whole file and send it to the client byte-by-byte.
-                            while (myFile.available())
+                            SdFile myFile;
+
+                            // Get the employee data
+                            employee = myList.getEmployee(i);
+
+                            // First make a header for each employee (basic employee data)
+                            client->printf("First Name:%s  Last Name:%s  TAG ID:%llu  Department:%s\r\n",
+                                           employee->firstName, employee->lastName, (unsigned long long)(employee->ID),
+                                           employee->department);
+
+                            // Try to open a file with reports fot this month
+                            if (logger.getEmployeeFile(&myFile, employee, month, year, 0))
                             {
-                                client->write(myFile.read());
+                                // Read the whole file and send it to the client byte-by-byte.
+                                while (myFile.available())
+                                {
+                                    client->write(myFile.read());
+                                }
                             }
-                        }
-                        else
-                        {
-                            // If there is no file for this specific employee, write an error.
-                            client->println("[No data for this employee]");
+                            else
+                            {
+                                // If there is no file for this specific employee, write an error.
+                                client->println("[No data for this employee]");
+                            }
+
+                            // Make a few new lines between employees
+                            client->println("\r\n\r\n");
+
+                            // Close the file
+                            myFile.close();
                         }
 
-                        // Make a few new lines between employees
-                        client->println("\r\n\r\n");
-
-                        // Close the file
-                        myFile.close();
+                        // Print out report data
+                        client->printf(
+                            "Report was created at %02d:%02d:%02d on %02d.%02d.%04d.\r\nBy Soldered Electronics",
+                            display.rtcGetHour(), display.rtcGetMinute(), display.rtcGetSecond(), display.rtcGetDay(),
+                            display.rtcGetMonth(), display.rtcGetYear());
                     }
-
-                    // Print out report data
-                    client->printf("Report was created at %02d:%02d:%02d on %02d.%02d.%04d.\r\nBy Soldered Electronics", display.rtcGetHour(), display.rtcGetMinute(), display.rtcGetSecond(), display.rtcGetDay(), display.rtcGetMonth(), display.rtcGetYear());
+                    else
+                    {
+                        // No employees in the list? Send an error message
+                        client->println("Content-type:text/html");
+                        client->println("Connection: close");
+                        client->println();
+                        client->println("No employess in the list!");
+                    }
                 }
                 else
                 {
-                    // No employees in the list? Send an error message
+                    // If parsing has failed, show error message (this should not happen!)
                     client->println("Content-type:text/html");
                     client->println("Connection: close");
                     client->println();
-                    client->println("No employess in the list!");
+                    client->println("Wrong data / parameters for the date!");
                 }
             }
-            else
-            {
-                // If parsing has failed, show error message (this should not happen!)
-                client->println("Content-type:text/html");
-                client->println("Connection: close");
-                client->println();
-                client->println("Wrong data / parameters for the date!");
-            }
+        }
+        else
+        {
+            // Send error message if the microSD card can't be found.
+            client->println("Content-type:text/html");
+            client->println("Connection: close");
+            client->println();
+            client->println("Wrong data / parameters for the date!");
+            client->println("microSD Card access error!");
         }
     }
     else if (strstr(buffer, "/byworker"))
@@ -1019,7 +1102,8 @@ void doServer(WiFiClient *client)
         client->println("        <form action=\"/byworker/\" method=\"GET\">");
         client->println("        <p>");
         client->println("            <label for=\"calendar\">Select month and year for report </label>");
-        client->printf("            <input type=\"month\" id=\"date\" name=\"date\" value=\"%04d-%02d\">\r\n", display.rtcGetYear(), display.rtcGetMonth());
+        client->printf("            <input type=\"month\" id=\"date\" name=\"date\" value=\"%04d-%02d\">\r\n",
+                       display.rtcGetYear(), display.rtcGetMonth());
         client->println("            <br>");
         client->println("            <input type =\"submit\" value =\"Get\">");
         client->println("        </form>");
@@ -1090,6 +1174,7 @@ void doServer(WiFiClient *client)
     }
     else if (strstr(buffer, "/api"))
     {
+        // API link is [PI Address]/api/getWeekHours/[TAGID]
         // Send response (200 OK)
         client->println("HTTP/1.1 200 OK");
         client->println("Content-type:text/plain");
@@ -1116,8 +1201,8 @@ void doServer(WiFiClient *client)
 
                     if (employee != NULL)
                     {
-                        int32_t weekHours;
-                        int32_t dayHours;
+                        int32_t weekHours = 0;
+                        int32_t dayHours = 0;
                         int32_t lastLogin = 0;
                         int32_t lastLogout = 0;
                         int32_t lastLogoutInList = 0;
@@ -1136,27 +1221,39 @@ void doServer(WiFiClient *client)
                         dayHours = logger.getEmployeeDailyHours(tagID, display.rtcGetEpoch(), &lastLogin, &lastLogout);
 
                         // Get the last log data (to check if the logout is done)
-                        logger.findLastLog(employee, NULL, &lastLogoutInList);
-
-                        // Send data to the client. Note that is different calculation if logout is done.
-                        if (lastLogoutInList == 0)
+                        if (logger.findLastLog(employee, NULL, &lastLogoutInList))
                         {
-                            // Add current time to the dayhours and weekhours (because logout is not done yet)
-                            dayHours += (display.rtcGetEpoch() - lastLogout);
-                            weekHours += (display.rtcGetEpoch() - lastLogout);
+                            // Send data to the client. Note that is different calculation if logout is done.
+                            if (lastLogoutInList == 0)
+                            {
+                                // Add current time to the dayhours and weekhours (because logout is not done yet)
+                                dayHours += ((int32_t)(display.rtcGetEpoch()) - lastLogin);
+                                weekHours += ((int32_t)(display.rtcGetEpoch()) - lastLogin);
 
-                            // Make string timestamp
-                            createTimeStampFromEpoch(loginTimestampStr, lastLogin);
+                                // Make string timestamp
+                                createTimeStampFromEpoch(loginTimestampStr, lastLogin);
 
-                            // Send the data to the client
-                            client->printf("Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: %s\r\nLogout: Not Done Yet\r\n", dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600, weekHours / 60 % 60, weekHours % 60, loginTimestampStr);
+                                // Send the data to the client
+                                client->printf("Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: "
+                                               "%s\r\nLogout: Not Done Yet\r\n",
+                                               dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600,
+                                               weekHours / 60 % 60, weekHours % 60, loginTimestampStr);
+                            }
+                            else
+                            {
+                                // Make string timestamp
+                                createTimeStampFromEpoch(loginTimestampStr, lastLogin);
+                                createTimeStampFromEpoch(logoutTimestampStr, lastLogout);
+                                client->printf(
+                                    "Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: %s\r\nLogout: %s\r",
+                                    dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600,
+                                    weekHours / 60 % 60, weekHours % 60, loginTimestampStr, logoutTimestampStr);
+                            }
                         }
                         else
                         {
-                            // Make string timestamp
-                            createTimeStampFromEpoch(loginTimestampStr, lastLogin);
-                            createTimeStampFromEpoch(logoutTimestampStr, lastLogout);
-                            client->printf("Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: %s\r\nLogout: %s\r", dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600, weekHours / 60 % 60, weekHours % 60, loginTimestampStr, logoutTimestampStr);
+                            // Send error if microSD card can't be found.
+                            client->println("microSD Card access error!");
                         }
                     }
                     else
@@ -1164,7 +1261,6 @@ void doServer(WiFiClient *client)
                         // Send error if the wrong ID is sent.
                         client->println("Wrong API ID!");
                     }
-                    
                 }
                 else
                 {

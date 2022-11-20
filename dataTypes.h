@@ -3,10 +3,24 @@
 
 #include "stdlib.h"
 
+// Secret key used for adding or deleting employees
+#define SECRET_KEY "password12"
+// Maximum is 49 chars long...just in case! :)
+#define SECRET_KEY_LEN  10
+
+// How long to keep menu active
+#define LOG_SCREEN_TIME 10000UL
+
 // Folder names and structure on micro SD Card
 #define DEFAULT_FOLDER_NAME "WorkingHoursDevice"
 #define DEFAULT_IMAGE_NAME  "defaultImage.bmp"
 #define DEFAULT_IMAGE_PATH  DEFAULT_FOLDER_NAME "/" DEFAULT_IMAGE_NAME
+
+// Fonts
+#define FONT_FILENAME       "SourceSansPro-Regular.ttf"
+#define FONT_NAME           "SourceSansPro"
+#define FONT_TYPE           "Regular"
+#define FONT_FORMAT         "opentype"
 
 // Tag for missed logout in the list.
 #define LOGGING_ERROR_STRING "??????????"

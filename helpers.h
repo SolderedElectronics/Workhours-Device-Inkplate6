@@ -4,6 +4,7 @@
 #include "Arduino.h"
 #include "Inkplate.h"
 #include "dataTypes.h"
+#include "include/icons.h"
 #include <stdio.h>
 #include <string.h>
 #include <sys\time.h>
@@ -16,5 +17,9 @@ void fixHTTPResponseText(char *_c);
 char *createImagePath(struct employeeData _e, char *_buffer);
 void createTimeStampFromEpoch(char *_str, int32_t _epoch);
 int readOneLineFromFile(SdFile *_myFile, char *_buffer, int _n);
+int sendIcon(WiFiClient *_client, SdFat *_sd);
+void removeEmployeeData(SdFat *_sd, employeeData *_employee);
+void drawInternetInfo(Inkplate *_ink);
+void drawIPAddress(Inkplate *_ink, int _x, int _y);
 
 #endif

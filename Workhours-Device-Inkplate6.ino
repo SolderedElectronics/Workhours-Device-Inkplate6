@@ -1,7 +1,5 @@
 #include "Inkplate.h" //Include Inkplate library to the sketch
-#include "SdFat.h"
 #include "esp_wifi.h"
-#include "favicon.h"
 #include "include/Inter12pt7b.h"
 #include "include/Inter16pt7b.h"
 #include "include/Inter8pt7b.h"
@@ -15,15 +13,8 @@
 #include "linkedList.h"
 #include "logging.h"
 
-#define DEBOUNCE_SCAN      1000         // Miliseconds
-#define LOG_SCREEN_TIME    10000        // Miliseconds
-#define TIMEOUT_AT_LOGGING 60 * 10      // seconds * minutes
-#define MAX_SHIFT_LASTING  60 * 60 * 14 // seconds * minutes * hours
-
 Inkplate display(INKPLATE_1BIT); // Create an object on Inkplate library and also set library into 1 Bit mode (BW)
-StaticJsonDocument<30000> doc;   // Buffer for JSON document
 WiFiServer server(80);
-
 LinkedList myList;
 Logging logger;
 
@@ -31,18 +22,22 @@ Logging logger;
 char ssid[] = "";
 char pass[] = "";
 // Set your Static IP address
-IPAddress localIP(192, 168, 71, 200); // IP address should be set to desired address
+IPAddress localIP(192, 168, 1, 240); // IP address should be set to desired address
 // Set your Gateway IP address
-IPAddress gateway(192, 168, 71, 1); // Gateway address should match IP address
+IPAddress gateway(192, 168, 1, 1); // Gateway address should match IP address
 IPAddress subnet(255, 255, 255, 0); // Subnet mask
 IPAddress primaryDNS(8, 8, 8, 8);   // Primary DNS
 IPAddress secondaryDNS(8, 8, 4, 4); // Secondary DNS
 
-// Global variables for menu.
+// Global variables.
+// Used for menu refreshing.
 uint32_t refreshes = 0;
-time_t log_shown = 0;
-uint8_t prev_minutes = 0;
-bool change_needed = 1, login_screen_shown = 0;
+bool changeNeeded = 1;
+unsigned long periodicRefresh = 0;
+unsigned long menuTimeout = 0;
+
+// Used for RTC update.
+unsigned long rtcUpdate = 0;
 
 void setup()
 {
@@ -112,49 +107,59 @@ void setup()
 
     // Start server
     display.print("\nStarting the web server");
-    display.partialUpdate(0, 1);
+    display.partialUpdate();
     server.begin();
     display.print("\nGetting the time from timeAPI...");
-    display.partialUpdate(0, 1);
+    display.partialUpdate();
     if (!fetchTime())
     {
         display.print("Failed! Please reset the device.");
-        display.partialUpdate(0, 1);
+        display.partialUpdate();
         while (true)
             ;
     }
 
     // Initialize library for logging functions. Send address of the SdFat object and Linked List object as parameters
     // (needed by the library).
-    display.print("\nReading data srom SD card");
-    display.partialUpdate(0, 1);
+    display.print("\nReading data from SD card");
+    display.partialUpdate();
     logger.begin(&sd, &myList, &display);
-    change_needed = 1;
 
     // Be ready for the next daily report calculation
     logger.calculateNextDailyReport();
+
+    Serial.println(WiFi.localIP());
+
+    // Draw the main screen
+    display.clearDisplay();
+    mainDraw();
+    changeNeeded = 1;
 }
 
 void loop()
 {
-    if (WiFi.status() == WL_CONNECTED) // Check if connection with WiFi is lost
+    // Check if connection with WiFi is lost
+    if (WiFi.status() == WL_CONNECTED)
     {
-        WiFiClient client = server.available(); // Check if there are active requests from clients
+        // Check if there are active requests from clients
+        WiFiClient client = server.available();
         if (client.available())
         {
-            doServer(&client); // Call function to do server things
+            // Call function to do server things
+            doServer(&client);
         }
     }
     else
     {
-        WiFi.reconnect(); // If connection to Wi Fi is lost then reconnect
+        // If connection to Wi Fi is lost then reconnect
+        WiFi.reconnect();
     }
-    if (Serial2.available()) // Check if tag is scanned
+
+    // Check if tag is scanned.
+    if (Serial2.available())
     {
         // Get data from RFID reader and conver it into integer (Tag data is sent as ASCII coded numbers).
         uint64_t tag = logger.getTagID();
-
-        // Upda
 
         // If the tag is successfully read, check if there is employee with that tag.
         struct employeeData employee;
@@ -162,8 +167,7 @@ void loop()
 
         if (result != LOGGING_TAG_ERROR)
         {
-            // If eeverything went ok, read the result.
-
+            // If everything went ok, read the result.
             // If it's login, show login screen with name, last name, department, tagID etc.
             if (result == LOGGING_TAG_LOGIN)
                 login(&employee);
@@ -190,25 +194,35 @@ void loop()
         }
     }
 
-    display.rtcGetRtcData(); // Get RTC data
-
-    if (log_shown + LOG_SCREEN_TIME < millis() || millis() < LOG_SCREEN_TIME) // If login/logout screen is shown
+    // If menu is active, return to the main screen after some times (defied in LOG_SCREEN_TIME).
+    if ((menuTimeout != 0) && ((unsigned long)(millis() - menuTimeout) > LOG_SCREEN_TIME))
     {
-        display.clearDisplay();                     // Clear screen
-        if (prev_minutes != display.rtcGetMinute()) // If minutes changed, change is needed
-        {
-            change_needed = 1;
-            mainDraw(); // Draw main screen
-        }
-        else if (login_screen_shown) // If login screen is shown but should not be shown change is needed
-        {
-            login_screen_shown = 0;
-            change_needed = 1;
-            mainDraw(); // Draw main screen
-        }
+        menuTimeout = 0;
+        display.clearDisplay();
+        mainDraw();
+        changeNeeded = 1;
     }
 
-    if (change_needed) // If change is needed, refresh screen
+    // Periodically refresh screen every 60 seconds.
+    if ((unsigned long)(millis() - periodicRefresh) >= 60000UL)
+    {
+        periodicRefresh = millis();
+        display.clearDisplay();
+        mainDraw();
+        changeNeeded = 1;
+        
+        // Update the RTC data.
+        display.rtcGetRtcData(); // Get RTC data
+    }
+
+    // Get RTC data every second
+    if ((unsigned long)(millis() - rtcUpdate) >= 1000UL)
+    {
+        rtcUpdate = millis();
+        display.rtcGetRtcData(); // Get RTC data
+    }
+
+    if (changeNeeded) // If change is needed, refresh screen
     {
         if (refreshes > 40000)
         {
@@ -217,24 +231,34 @@ void loop()
         }
         else
         {
-            refreshes += display.partialUpdate(0, 1);
+            refreshes += display.partialUpdate();
         }
-        change_needed = 0;
+        changeNeeded = 0;
     }
 
     // Check if daily report needs to be made.
     if (logger.isDailyReport())
     {
+        // Show the screen
+        dailyReportScreen();
+        display.display();
+
         // Make a daily report for all employees
         logger.createDailyReport();
 
         // Calculate the time for the next.
         logger.calculateNextDailyReport();
+
+        // Update the time
+        fetchTime();
+
+        // Wait for 10 seconds (daily report is activated 10 seconds before midnight)
+        delay(10000);
     }
 }
 
-// Time fetching
-
+// Get the time from the web (time.api). If everything went ok, Inkplate RTC will be set to the correct time.
+// Otherwise, funciton will return 0 and clock won't be set.
 int fetchTime()
 {
     WiFiClientSecure client;
@@ -243,12 +267,13 @@ int fetchTime()
     char _temp[500];
     struct tm _t;
     int32_t _epoch;
+    int i = 0;
+    char *_jsonStart = NULL;
 
     client.setInsecure(); // Skip verification
     if (client.connect("timeapi.io", 443))
     {
-        Serial.println("Connected!");
-        client.println("GET /api/Time/current/zone?timeZone=Europe/Zagreb HTTP/1.0");
+        client.println("GET /api/Time/current/zone?timeZone=Europe/Zagreb HTTP/1.1");
         client.println("Host: timeapi.io");
         client.println("Connection: close");
         client.println();
@@ -262,8 +287,8 @@ int fetchTime()
                 break;
             }
         }
-        // if there are incoming bytes available
-        // from the server, read them and print them:
+
+        // Read and store everything after the header
         int i = 0;
         memset(_temp, 0, sizeof(_temp));
         while (client.available())
@@ -272,18 +297,26 @@ int fetchTime()
         }
         client.stop();
 
-        _err = deserializeJson(_doc, _temp);
+        // Find the start of the JSON file
+        _jsonStart = strchr(_temp, '{');
+        if (_jsonStart == NULL) return 0;
 
+        // Deserialize the JSON file.
+        _err = deserializeJson(_doc, _jsonStart);
+
+        // Deserilization error=? Return error.
         if (_err)
         {
             return 0;
         }
 
+        // No entry in JSON called "seconds"? Return error.
         if (!_doc.containsKey("seconds"))
         {
             return 0;
         }
 
+        // Get the clock!
         _t.tm_year = (int)_doc["year"] - 1900;
         _t.tm_mon = (int)_doc["month"] - 1;
         _t.tm_mday = _doc["day"];
@@ -293,20 +326,28 @@ int fetchTime()
         _t.tm_isdst = 0;
         _epoch = mktime(&_t);
 
+        // Set it on Inkplate RTC.
         display.rtcSetEpoch(_epoch);
         display.rtcGetRtcData();
         return 1;
     }
+
+    // Stop the client (just in case).
     client.stop();
+
+    // If you got this far, that means something is wrong. Return error.
     return 0;
 }
 
-// Display screens
+// Show login screen.
 void login(struct employeeData *_w)
 {
     // Code for login screen
+
+    // Array for the image path on the microSD card.
     char _imagePath[200];
 
+    // Write the data on the display.
     display.setTextSize(1);
     display.setFont(&Inter16pt7b);
     display.setCursor(250, 360);
@@ -322,22 +363,33 @@ void login(struct employeeData *_w)
     display.printf(" [%s]", _w->department);
     display.setCursor(250, 530);
     display.print("Login");
+
+    // Create path to the image on the microSD card
     createImagePath((*_w), _imagePath);
+
+    // Try to display it. If not, use default image.
     if (!(display.drawImage(_imagePath, 250, 20, 1, 0)))
     {
         display.drawImage(DEFAULT_IMAGE_PATH, 250, 20, 1, 0);
     }
+
+    // Make a sound.
     buzz(1);
-    log_shown = millis();
-    change_needed = 1;
-    login_screen_shown = 1;
+
+    // Set variables for screen update and timeout.
+    menuTimeout = millis();
+    changeNeeded = 1;
 }
 
+// Show logout screen.
 void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
 {
     // Code for logout screen
+
+    // Array for the image path on the microSD card.
     char _imagePath[200];
 
+    // Write the data on the display.
     display.setTextSize(1);
     display.setFont(&Inter16pt7b);
     display.setCursor(250, 360);
@@ -357,17 +409,25 @@ void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
     display.printf("Daily: %2d:%02d:%02d", _dailyHours / 3600, _dailyHours / 60 % 60, _dailyHours % 60);
     display.setCursor(250, 570);
     display.printf("Weekly: %2d:%02d:%02d", _weekHours / 3600, _weekHours / 60 % 60, _weekHours % 60);
+
+    // Create path to the image on the microSD card
     createImagePath((*_w), _imagePath);
+
+    // Try to display it. If not, use default image.
     if (!(display.drawImage(_imagePath, 250, 20, 1, 0)))
     {
         display.drawImage(DEFAULT_IMAGE_PATH, 250, 20, 1, 0);
     }
+
+    // Make a sound.
     buzz(1);
-    log_shown = millis();
-    change_needed = 1;
-    login_screen_shown = 1;
+
+    // Set variables for screen update and timeout.
+    menuTimeout = millis();
+    changeNeeded = 1;
 }
 
+// Show the screen if some one is already logged.
 void alreadyLogged(uint64_t _tag)
 {
     buzz(1);
@@ -379,11 +439,11 @@ void alreadyLogged(uint64_t _tag)
     display.setTextSize(1);
     display.setCursor(50, 500);
     display.print("You already scanned your tag in last 10 minutes!");
-    change_needed = 1;
-    login_screen_shown = 1;
-    log_shown = millis();
+    menuTimeout = millis();
+    changeNeeded = 1;
 }
 
+// Show error screen for unknown tag.
 void unknownTag(unsigned long long _tagID)
 {
     buzz(2);
@@ -394,11 +454,11 @@ void unknownTag(unsigned long long _tagID)
     display.print("Tag ID ");
     display.print(_tagID);
     display.print(" is not assigned to any worker");
-    change_needed = 1;
-    login_screen_shown = 1;
-    log_shown = millis();
+    menuTimeout = millis();
+    changeNeeded = 1;
 }
 
+// Show this screen if something weird happen to the logging.
 void tagLoggingError()
 {
     buzz(2);
@@ -407,11 +467,11 @@ void tagLoggingError()
     display.setFont(&Inter16pt7b);
     display.setCursor(50, 50);
     display.print("Logging failed! Check with the gazda for more info");
-    change_needed = 1;
-    login_screen_shown = 1;
-    log_shown = millis();
+    menuTimeout = millis();
+    changeNeeded = 1;
 }
 
+// This screen will appear if the microSD card is missing while loging in or loging out.
 void errorDisplay()
 {
     display.setTextSize(1);
@@ -420,10 +480,23 @@ void errorDisplay()
     display.clearDisplay();
     display.print("\nError occured. No SD card inserted. Please insert SD Card. If you don't have SD card, please "
                   "contact gazda.");
-    display.display();
-    log_shown = millis();
+    menuTimeout = millis();
+    changeNeeded = 1;
 }
 
+// Screen when daily report is active
+void dailyReportScreen()
+{
+    display.setTextSize(1);
+    display.setFont(&Inter16pt7b);
+    display.setCursor(0, 30);
+    display.clearDisplay();
+    display.print("Creating daily report, please wait!");
+    menuTimeout = millis();
+}
+
+// Funcion for making a sound. Buzzer must be connected on the IO expaned GPIO15 pin with the MOSFET)
+// Do not connect buzzer directly to the IO expander!
 void buzz(uint8_t n)
 {
     for (int i = 0; i < n; i++)
@@ -435,6 +508,7 @@ void buzz(uint8_t n)
     }
 }
 
+// Function that handles all requests for the client.
 void doServer(WiFiClient *client)
 {
     // Update the RTC data (needed by the code below)
@@ -450,26 +524,26 @@ void doServer(WiFiClient *client)
         client->println("Connection: close");
         client->println();
         client->println("@font-face {");
-        client->println("  font-family: 'Inter';");
-        client->println("  src: url('/inter.woff') format('woff');");
+        client->printf("  font-family: '%s';\r\n", FONT_NAME);
+        client->printf("  src: url('%s') format('%s');\r\n", FONT_FILENAME, FONT_FORMAT);
         client->println("}\n");
         client->println("html {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println("  display: inline-block; ");
         client->println("  text-align: center;");
         client->println("}");
         client->println("h1 {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println("  font-size: 1.8rem; ");
-        client->println("  color: #BCA876;");
+        client->println("  color: #FEFCFB;");
         client->println("}");
         client->println("p { ");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println("  font-size: 1.4rem;");
         client->println("}");
         client->println(".topnav { ");
         client->println("  overflow: hidden; ");
-        client->println("  background-color: #582C83;");
+        client->println("  background-color: #5B2379;");
         client->println("}");
         client->println("body {  ");
         client->println("  margin: 0;");
@@ -494,13 +568,13 @@ void doServer(WiFiClient *client)
         client->println(".card-title { ");
         client->println("  font-size: 1.2rem;");
         client->println("  font-weight: bold;");
-        client->println("  color: #25BAA8");
+        client->println("  color: #23B9D6");
         client->println("}");
         client->println("input[type=submit] ");
         client->println("{");
         client->println("  border: none;");
         client->println("  color: #FEFCFB;");
-        client->println("  background-color: #25BAA8;");
+        client->println("  background-color: #23B9D6;");
         client->println("  padding: 15px 15px;");
         client->println("  text-align: center;");
         client->println("  text-decoration: none;");
@@ -512,15 +586,15 @@ void doServer(WiFiClient *client)
         client->println("  transition-duration: 0.4s;");
         client->println("  }");
         client->println("a {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println(" text-decoration: none;");
         client->println(" width: 150px;");
         client->println("}");
         client->println("button {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println("  border: none;");
         client->println("  color: #FEFCFB;");
-        client->println("  background-color: #25BAA8;");
+        client->println("  background-color: #23B9D6;");
         client->println("  padding: 15px 15px;");
         client->println("  text-align: center;");
         client->println("  text-decoration: none;");
@@ -532,29 +606,29 @@ void doServer(WiFiClient *client)
         client->println("  transition-duration: 0.4s;");
         client->println("  }");
         client->println("input[type=radio]:hover {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println(" margin : 18px;");
         client->println("  background-color: #1282A2;");
         client->println("}");
         client->println("input[type=submit]:hover {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println(" margin : 18px;");
         client->println("  background-color: #1282A2;");
         client->println("}");
         client->println("input[type=radio] {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println("  margin : 18px;");
         client->println("}");
         client->println("input[type=submit] {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println(" margin : 18px;");
         client->println("}");
         client->println("button:hover {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println("  background-color: #1282A2;");
         client->println("}");
         client->println("input[type=text], input[type=number], select {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println("  width: 50%;");
         client->println("  padding: 12px 20px;");
         client->println("  margin: 18px;");
@@ -564,37 +638,37 @@ void doServer(WiFiClient *client)
         client->println("  box-sizing: border-box;");
         client->println("}");
         client->println("label {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println("  font-size: 1.2rem; ");
         client->println("}");
         client->println(".value{");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println("  font-size: 1.2rem;");
         client->println("  color: #1282A2;  ");
         client->println("}");
         client->println(".state {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println("  font-size: 1.2rem;");
         client->println("  color: #1282A2;");
         client->println("}");
         client->println(".button-on {");
-        client->println("  font-family: Inter, Inter, Regular; ");
-        client->println("  background-color: #25BAA8;");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
+        client->println("  background-color: #23B9D6;");
         client->println("}");
         client->println(".button-on:hover {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println("  background-color: #1282A2;");
         client->println("}");
         client->println(".button-off {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println("  background-color: #858585;");
         client->println("}");
         client->println(".button-off:hover {");
-        client->println("  font-family: Inter, Inter, Regular; ");
+        client->printf("  font-family: %s, %s, %s; \r\n", FONT_NAME, FONT_NAME, FONT_TYPE);
         client->println("  background-color: #252524;");
         client->println("} ");
     }
-    else if (strstr(buffer, "/inter.woff"))
+    else if (strstr(buffer, FONT_FILENAME))
     {
         // Init micro SD Card
         sd.begin(15, SD_SCK_MHZ(10));
@@ -603,7 +677,7 @@ void doServer(WiFiClient *client)
         sd.chdir(true);
 
         // Allocate memory for the font file
-        char *ps = (char *)ps_malloc(50000);
+        char *ps = (char *)ps_malloc(500000);
 
         // Allocation ok? Get the file from the micro SD
         if (ps != NULL)
@@ -612,7 +686,7 @@ void doServer(WiFiClient *client)
             char _filePath[250];
 
             // Make path to the font file
-            sprintf(_filePath, "%s/%s", DEFAULT_FOLDER_NAME, "webFontInter.dat");
+            sprintf(_filePath, "%s/%s", DEFAULT_FOLDER_NAME, FONT_FILENAME);
 
             // Try to open the file
             if (file.open(_filePath, FILE_READ))
@@ -624,7 +698,7 @@ void doServer(WiFiClient *client)
                 client->println("Connection: close");
                 client->println();
 
-                // Opened successfully. Get the bytes and send it to the web.
+                // Open successfully. Get the bytes and send it to the web.
                 int size_of_file = file.size();
                 memset(ps, 0, size_of_file * sizeof(char));
                 file.read(ps, size_of_file);
@@ -643,10 +717,11 @@ void doServer(WiFiClient *client)
         client->println("Connection: close");
         client->println();
         unsigned long long tempID = 0;
-        char tempName[50];
+        char tempFName[50];
         char tempLName[50];
         char tempImage[128];
         char tempDepartment[100];
+        char tempKey[51];
         char *temp = strstr(buffer, "addworker/?");
 
         client->println("<!DOCTYPE html>");
@@ -664,29 +739,42 @@ void doServer(WiFiClient *client)
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
+        
+        // Parse the input data. There should be 6 items parsed. 
+        int _res = sscanf(temp, "addworker/?name=%[^'&']&lname=%[^'&']&tagID=%llu&department=%[^'&']&image=%[^'&']&key=%s", tempFName,
+                   tempLName, &(tempID), tempDepartment, tempImage, tempKey);
 
-        if (sscanf(temp, "addworker/?name=%[^'&']&lname=%[^'&']&tagID=%llu&department=%[^'&']&image=%s;", tempName,
-                   tempLName, &(tempID), tempDepartment, tempImage) == 5)
+        // Fix http text for all string inputs (covert HEX into ASCII, for example '# sign is in HTTp response %23 - 0x23 is in ASCII '#').
+        fixHTTPResponseText(tempFName);
+        fixHTTPResponseText(tempLName);
+        fixHTTPResponseText(tempDepartment);
+        fixHTTPResponseText(tempImage);
+        fixHTTPResponseText(tempKey);
+
+        Serial.println(temp);
+        Serial.printf("Add worker: Name: %s Last name: %s ID; %llu Depart: %s Image: %s\r\n", tempFName, tempLName, tempID, tempDepartment, tempImage);
+
+        // If the data is ok and key is vaild, add the employee.
+        if (_res == 6 && strstr(tempKey, SECRET_KEY) != NULL)
         {
             if (!myList.checkID(tempID))
             {
-                fixHTTPResponseText(tempDepartment);
-                myList.addEmployee(tempName, tempLName, tempID, tempImage, tempDepartment);
+                myList.addEmployee(tempFName, tempLName, tempID, tempImage, tempDepartment);
                 logger.updateEmployeeFile();
-                client->println("        <p>Worker added successfully!</p>");
+                client->println("        <p>Employee added successfully!</p>");
             }
             else
             {
-                client->println("        <p>Worker with ID already exist!</p>");
+                client->println("        <p>Employee with ID already exist!</p>");
             }
         }
         else
         {
-            client->println("ERROR!");
+            client->println("<p>ERROR! Wrong password or input!</p>");
         }
 
         client->println("        <a href=\"/\"> <button>Home</button> </a>");
-        client->println("        <a href=\"/addworker\"> <button>Add another worker</button> </a>");
+        client->println("        <a href=\"/addworker\"> <button>Add another Employee</button> </a>");
         client->println("      </div>");
         client->println("    </div>");
         client->println("  </div>");
@@ -717,16 +805,18 @@ void doServer(WiFiClient *client)
         client->println("      <div class=\"card\">");
         client->println("        <form action=\"/addworker/\" method=\"GET\">");
         client->println("          <p>");
-        client->println("            <label for=\"name\">Fist name</label>");
+        client->println("            <label for=\"name\">First name</label>");
         client->println("            <input type=\"text\" id =\"name\" name=\"name\"><br>");
         client->println("            <label for=\"lname\">Last Name</label>");
         client->println("            <input type=\"text\" id =\"lname\" name=\"lname\"><br>");
         client->println("            <label for=\"tagID\">ID of RFID tag</label>");
-        client->println("            <input type=\"text\" id =\"tagID\" name=\"tagID\"><br>");
+        client->println("            <input type=\"number\" id =\"tagID\" name=\"tagID\"><br>");
         client->println("            <label for=\"department\">Department</label>");
         client->println("            <input type=\"text\" id =\"department\" name=\"department\"><br>");
         client->println("            <label for=\"image\">Image name</label>");
         client->println("            <input type=\"text\" id =\"image\" name=\"image\"><br>");
+        client->println("            <label for=\"password\">Password</label>");
+        client->println("            <input type=\"password\" id =\"key\" name=\"key\"><br>");
         client->println("            <input type =\"submit\" value =\"Add worker\">");
         client->println("        </form>");
         client->println("        <a href=\"/\"> <button>Back</button> </a>");
@@ -743,27 +833,15 @@ void doServer(WiFiClient *client)
         client->println("Cache-Control: public, max-age=2678400");
         client->println("Connection: close");
         client->println();
-        client->write(favicon, 318);
+        sendIcon(client, &sd);
     }
     else if (strstr(buffer, "remove/?remove"))
     {
+        // Send HHTTP response
         client->println("HTTP/1.1 200 OK");
         client->println("Content-type:text/html");
         client->println("Connection: close");
         client->println();
-
-        uint64_t idToRemove;
-
-        char *_subString = strstr(buffer, "/?remove");
-        if (_subString != NULL)
-        {
-            if (sscanf(_subString, "/?remove=%lld", (unsigned long long *)(&idToRemove)) == 1)
-            {
-                myList.removeEmployee(idToRemove);
-                logger.updateEmployeeFile();
-            }
-        }
-
         client->println("<!DOCTYPE html>");
         client->println(" <html>");
         client->println(" <head>");
@@ -779,9 +857,41 @@ void doServer(WiFiClient *client)
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
-        client->println("        <p>Worker removed successfully!</p>");
-        client->println("        <a href=\"/\"> <button>Home</button> </a>");
-        client->println("        <a href=\"/remove\"> <button>Remove another worker</button> </a>");
+
+        uint64_t _idToRemove;
+        char _tempKey[51];
+        int _removeEmployeeDataFlag = 0;
+
+        // Try to find the /?remove substring. If it's found, try to parse the data (employee ID and secretKey)
+        char *_subString = strstr(buffer, "/?remove");
+        if (_subString != NULL)
+        {
+            // Try to get the data from the string
+            int _res = sscanf(_subString, "/?remove=%lld&dataRemoval=%d&key=%s", (unsigned long long *)(&_idToRemove), &_removeEmployeeDataFlag, _tempKey);
+            
+            // Try to fix HTTP response (convert HTTP HEX into ASCII)
+            fixHTTPResponseText(_tempKey);
+
+            if (_res >= 2 && strstr(_tempKey, SECRET_KEY))
+            {
+                if (_removeEmployeeDataFlag)
+                {
+                    struct employeeData *_employee;
+                    _employee = myList.getEmployeeByID(_idToRemove);
+                    removeEmployeeData(&sd, _employee);
+                }
+                myList.removeEmployee(_idToRemove);
+                logger.updateEmployeeFile();
+                client->println("        <p>Worker removed successfully!</p>");
+                client->println("        <a href=\"/\"> <button>Home</button> </a>");
+                client->println("        <a href=\"/remove\"> <button>Remove another worker</button> </a>");
+            }
+            else
+            {
+                client->println("        <p>ERROR! Wrong password or input!</p>");
+            }
+        }
+
         client->println("      </div>");
         client->println("    </div>");
         client->println("  </div>");
@@ -1162,7 +1272,10 @@ void doServer(WiFiClient *client)
             client->print("No workers in the database!");
             client->println("</label><br>");
         }
-
+        client->println("            <label for=\"dataRemoval\">Remove all employee data from the storage? </label>");
+        client->println("            <input type=\"checkbox\" id=\"dataRemoval\" name=\"dataRemoval\" value=\"1\"><br>");
+        client->println("            <label for=\"password\">Password</label>");
+        client->println("            <input type=\"password\" id =\"key\" name=\"key\"><br>");
         client->println("            <input type =\"submit\" value =\"Remove\">");
         client->println("        </form>");
         client->println("        <a href=\"/\"> <button>Back</button> </a>");

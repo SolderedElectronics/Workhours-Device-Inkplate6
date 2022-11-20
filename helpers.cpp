@@ -181,3 +181,122 @@ int readOneLineFromFile(SdFile *_myFile, char *_buffer, int _n)
 
     return 1;
 }
+
+int sendIcon(WiFiClient *_client, SdFat *_sd)
+{
+    SdFile _myFile;
+    uint8_t *_buffer;
+
+    // Try to init the microSD card. If failed, return 0.
+    if (!_sd->begin(15, SD_SCK_MHZ(10)))
+    {
+        return 0;
+    }
+
+    // Change dir to working directory of this device
+    if (!_sd->chdir(DEFAULT_FOLDER_NAME))
+    {
+        return 0;
+    }
+
+    // Now try to open favicon.ico file
+    if (!_myFile.open("favicon.ico"))
+    {
+        return 0;
+    }
+
+    // Allocate  memory for the favicon file.
+    _buffer = (uint8_t*)ps_malloc(_myFile.fileSize());
+    if (_buffer == NULL) return 0;
+
+    // Read it!
+    _myFile.read(_buffer, _myFile.fileSize());
+
+    // Send it to the client
+    _client->write(_buffer, _myFile.fileSize());    
+
+    // Close the file
+    _myFile.close();
+
+    // Free the memory
+    free(_buffer);
+
+    // Go back to the root dir
+    _sd->chdir(true);
+
+    // Return succ
+    return 1;
+}
+
+void removeEmployeeData(SdFat *_sd, employeeData *_employee)
+{
+    SdFile _myFile;
+    uint8_t *_buffer;
+
+    // Try to init the microSD card. If failed, return 0.
+    if (!_sd->begin(15, SD_SCK_MHZ(10)))
+    {
+        return;
+    }
+
+    // Go back to the root
+    _sd->chdir(true);
+
+    // Open working folder of this device
+    _sd->chdir(DEFAULT_FOLDER_NAME, true);
+
+    // Make folder name
+    char _folderName[250];
+    snprintf(_folderName, sizeof(_folderName), "%s%s%llu", _employee->firstName, _employee->lastName, (unsigned long long)(_employee->ID));
+
+    Serial.print(_folderName);
+
+    // Remove the folder
+    _myFile.open(_folderName);
+    if (!_myFile.rmRfStar())
+    {
+        Serial.println("Could not remove the folder!");
+    }
+
+    // Close the file.
+    _myFile.close();
+
+    // Go back to the root
+    _sd->chdir(true);
+
+    return;
+}
+
+void drawInternetInfo(Inkplate *_ink)
+{
+    // Clear the part of the screen for the icon.
+    _ink->fillRect(0, 0, noWifiSymbol_w, noWifiSymbol_h, WHITE);
+    _ink->fillRect(60, 0, wifiSignal_w, wifiSignal_h, WHITE);
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        // Draw the icon for wifi.
+        _ink->drawBitmap(0, 0, wifiSymbol, wifiSymbol_w, wifiSymbol_h, BLACK);
+
+        // Draw the symbol icon
+        int _mappedSignal = map(WiFi.RSSI(), -127, 0, 0, 5);
+        _ink->drawBitmap(60, 0, wifiSignal[_mappedSignal], wifiSignal_w, wifiSignal_h, BLACK);
+    }
+    else
+    {
+        // Draw the icon for no wifi.
+        _ink->drawBitmap(0, 0, noWifiSymbol, noWifiSymbol_w, noWifiSymbol_h, BLACK);
+    }
+}
+
+void drawIPAddress(Inkplate *_ink, int _x, int _y)
+{
+    // Set normal 5x7 font
+    _ink->setFont();
+
+    // Set the cursor
+    _ink->setCursor(_x, _y);
+
+    // Printout the IP address
+    _ink->print(WiFi.localIP());
+}

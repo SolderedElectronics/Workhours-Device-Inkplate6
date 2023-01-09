@@ -19,8 +19,8 @@ LinkedList myList;
 Logging logger;
 
 // Change WiFi and IP data to suit your setup.
-char ssid[] = "Soldered";
-char pass[] = "dasduino";
+char ssid[] = "";
+char pass[] = "";
 // Set your Static IP address
 IPAddress localIP(192, 168, 1, 200); // IP address should be set to desired address
 // Set your Gateway IP address

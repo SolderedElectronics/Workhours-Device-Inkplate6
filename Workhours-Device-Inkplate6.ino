@@ -8,7 +8,7 @@
 #include <sys\time.h>
 #include <time.h>
 
-#include "dataTypes.h"
+#include "defines.h"
 #include "helpers.h"
 #include "linkedList.h"
 #include "logging.h"
@@ -19,15 +19,15 @@ LinkedList myList;
 Logging logger;
 
 // Change WiFi and IP data to suit your setup.
-char ssid[] = "";
-char pass[] = "";
+char ssid[] = "Soldered";
+char pass[] = "dasduino";
 // Set your Static IP address
-IPAddress localIP(192, 168, 1, 200); // IP address should be set to desired address
+IPAddress localIP(192, 168, 2, 200); // IP address should be set to desired address
 // Set your Gateway IP address
-IPAddress gateway(192, 168, 1, 1); // Gateway address should match IP address
+IPAddress gateway(192, 168, 2, 1); // Gateway address (in most cases it's the first address of selected IP addreess subnet)
 IPAddress subnet(255, 255, 255, 0); // Subnet mask
-IPAddress primaryDNS(8, 8, 8, 8);   // Primary DNS
-IPAddress secondaryDNS(8, 8, 4, 4); // Secondary DNS
+IPAddress primaryDNS(192, 168, 2, 1);   // Primary DNS (use router / ISP DNS as primary one)
+IPAddress secondaryDNS(8, 8, 4, 4); // Secondary DNS (use google as secondary one)
 
 // Global variables.
 // Used for menu refreshing.
@@ -50,12 +50,13 @@ void setup()
     display.sdCardInit();
     display.setFont(&Inter16pt7b);
     display.setCursor(0, 30);
-    // display.pinModeMCP(0, OUTPUT);
+    display.pinModeIO(BUZZER_PIN, OUTPUT, IO_INT_ADDR);
 
     display.print("Checking microSD Card");
     display.partialUpdate(0, 1);
     if (!sd.begin(15, SD_SCK_MHZ(10)))
     {
+        BUZZ_SYS_ERROR;
         errorDisplay();
         display.partialUpdate(0, 1);
         while (1)
@@ -113,6 +114,7 @@ void setup()
     display.partialUpdate();
     if (!fetchTime())
     {
+        BUZZ_SYS_ERROR;
         display.print("Failed! Please reset the device.");
         display.partialUpdate();
         while (true)
@@ -374,7 +376,7 @@ void login(struct employeeData *_w)
     }
 
     // Make a sound.
-    buzz(1);
+    BUZZ_LOG;
 
     // Set variables for screen update and timeout.
     menuTimeout = millis();
@@ -420,7 +422,7 @@ void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
     }
 
     // Make a sound.
-    buzz(1);
+    BUZZ_LOG;
 
     // Set variables for screen update and timeout.
     menuTimeout = millis();
@@ -430,7 +432,7 @@ void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
 // Show the screen if some one is already logged.
 void alreadyLogged(uint64_t _tag)
 {
-    buzz(1);
+    BUZZ_LOG_ERROR;
     display.clearDisplay();
     display.setTextSize(3);
     display.setFont(&Inter16pt7b);
@@ -446,7 +448,7 @@ void alreadyLogged(uint64_t _tag)
 // Show error screen for unknown tag.
 void unknownTag(unsigned long long _tagID)
 {
-    buzz(2);
+    BUZZ_LOG_ERROR;
     display.clearDisplay();
     display.setTextSize(1);
     display.setFont(&Inter16pt7b);
@@ -461,7 +463,7 @@ void unknownTag(unsigned long long _tagID)
 // Show this screen if something weird happen to the logging.
 void tagLoggingError()
 {
-    buzz(2);
+    BUZZ_LOG_ERROR;
     display.clearDisplay();
     display.setTextSize(1);
     display.setFont(&Inter16pt7b);
@@ -497,15 +499,22 @@ void dailyReportScreen()
 
 // Funcion for making a sound. Buzzer must be connected on the IO expaned GPIO15 pin with the MOSFET)
 // Do not connect buzzer directly to the IO expander!
-void buzz(uint8_t n)
+void buzzer(uint8_t n, int _ms)
 {
+    return;
+    delay(100);
     for (int i = 0; i < n; i++)
     {
-        // display.digitalWriteMCP(0, HIGH);
-        delay(150);
-        // display.digitalWriteMCP(0, LOW);
-        delay(150);
+        unsigned long _timer1 = millis();
+        while((unsigned long)(millis() - _timer1) < _ms)
+        {
+            display.digitalWriteIO(BUZZER_PIN, HIGH, IO_INT_ADDR);
+            display.digitalWriteIO(BUZZER_PIN, LOW, IO_INT_ADDR);
+        }
+        _timer1 = millis();
+        while((unsigned long)(millis() - _timer1) < _ms);
     }
+    delay(100);
 }
 
 // Function that handles all requests for the client.

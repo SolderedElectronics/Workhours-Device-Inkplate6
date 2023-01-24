@@ -619,7 +619,9 @@ int32_t Logging::getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch)
     int32_t _endWeekEpoch;
     int32_t _weekHours = 0;
 
-    SdFile _myFile;
+    SdFile _fileCurrentMonth;
+    SdFile _filePrevMonth;
+    const time_t _epochInternal = _epoch;
 
     // Get all employee data (First name, last name, tagID, etc...)
     struct employeeData *_employee = _link->getEmployeeByID(_tagID);
@@ -628,58 +630,85 @@ int32_t Logging::getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch)
     if (_employee == NULL)
         return -1;
 
-    // Create human readable time and date from epoch.
-    struct tm _myTime;
-    memcpy(&_myTime, localtime((const time_t *)&_epoch), sizeof(_myTime));
-
-    // Open a directory and file of this specific employee for month and year defined in the function argument.
-    char _path[250];
-    sprintf(_path, "/%s/%s%s%llu/%d/%s_%04d_%02d_int.csv", DEFAULT_FOLDER_NAME, &(_employee->firstName),
-            &(_employee->lastName), (unsigned long long)(_employee->ID), _myTime.tm_year + 1900, _employee->firstName,
-            _myTime.tm_year + 1900, _myTime.tm_mon + 1);
-
-    // Try to open this file (if it even exists). Can't do that? Throw an error (return -1)!
-    if (!_myFile.open(_path))
-    {
-        return -1;
-    }
-
+    // Get the start and end epoch of the current week.
     // Now, tricky stuff. But this function can save us! It calculates the epoch for first day of the week and the last
     // day of the week where current epoch lands. For example if epoch of 07.09.2022 15:05:14 is send it will return
-    // epoch for 05.09.2022. 0:00:00 and 11.09.2022. 23:59:59- It also handles situation where end of the month is in
-    // the middle of the week. Neat!
+    // epoch for 05.09.2022. 0:00:00 and 11.09.2022. 23:59:59. It will NOT handle situation where end of the month is in
+    // the middle of the week.
     calculateWeekdayEpochs(_epoch, &_startWeekEpoch, &_endWeekEpoch);
 
-    // Now get one line from the file with login and logut epoch times and parse it using sscanf function.
-    // Function for logging (addLog) and this function MUST have same structure!!!
-    char _oneLine[250];
-    while (_myFile.available())
+    // Check if month change has occured in one week. If so, two files needs to be opened.
+    if (monthChangeDeteced(_startWeekEpoch, _endWeekEpoch))
     {
-        char c = 0;
-        int k = 0;
-        unsigned long _login = 0;
-        unsigned long _logout = 0;
-        while (c != '\n' && _myFile.available())
-        {
-            c = _myFile.read();
-            _oneLine[k++] = c;
-        }
-        _oneLine[k] = 0;
+        struct tm _prevMonthTd;
+        struct tm _currentMonthTd;
 
-        // If function finds both times (login and logout), it can calculate work hours between logs.
-        if (sscanf(_oneLine, "%lu; %lu;", &_login, &_logout) == 2)
+        // Init the structs (needed for correct conversion).
+        memset(&_prevMonthTd, 0, sizeof(_prevMonthTd));
+        memset(&_currentMonthTd, 0, sizeof(_currentMonthTd));
+
+        // Convert epoch to the human readable time and date
+        memcpy(&_prevMonthTd, localtime(&_epochInternal), sizeof(_prevMonthTd));
+        memcpy(&_currentMonthTd, localtime(&_epochInternal), sizeof(_currentMonthTd));
+
+        // Modify the time and date struct by going one month back in time.
+        _prevMonthTd.tm_mon -= 1;
+
+        // Update the whole time and date struct.
+        mktime(&_prevMonthTd);
+
+        // Try to open file for the current month.
+        if (getEmployeeFile(&_filePrevMonth, _employee, _prevMonthTd.tm_mon + 1, _prevMonthTd.tm_year + 1900, 1) &&
+            getEmployeeFile(&_fileCurrentMonth, _employee, _currentMonthTd.tm_mon + 1, _currentMonthTd.tm_year + 1900,
+                            1))
         {
-            // Just use times that matches start and end of the current week, ingore anything else.
-            if ((_login >= _startWeekEpoch) && (_login <= _endWeekEpoch) && (_logout <= _endWeekEpoch) &&
-                (_logout >= _startWeekEpoch))
+            // Variables for logged time for both months.
+            int32_t _loggedTimePrevMonth = 0;
+            int32_t _loggedTimeCurrMonth = 0;
+
+            // Get the week hours of both months.
+            if (getWorkHours(&_filePrevMonth, _startWeekEpoch, _endWeekEpoch, &_loggedTimePrevMonth) &&
+                getWorkHours(&_fileCurrentMonth, _startWeekEpoch, _endWeekEpoch, &_loggedTimeCurrMonth))
             {
-                _weekHours += (_logout - _login);
+                // Sum both of the logged times (from prev and current month).
+                _weekHours = _loggedTimeCurrMonth + _loggedTimePrevMonth;
+
+                // Close the files.
+                _filePrevMonth.close();
+                _fileCurrentMonth.close();
             }
         }
+        else
+        {
+            // Something went wrong... Return -1 indicating an error.
+            return -1;
+        }
     }
+    else
+    {
+        // Calculate the human time and date.
+        struct tm _currentMonth;
 
-    // Close the file - Very importnant!
-    _myFile.close();
+        // Init the struct.
+        memset(&_currentMonth, 0, sizeof(_currentMonth));
+
+        // Calculate the time.
+        memcpy(&_currentMonth, localtime(&_epochInternal), sizeof(_currentMonth));
+
+        // If no month change is detected, normally open and read only one file (file for the current month).
+        if (getEmployeeFile(&_fileCurrentMonth, _employee, _currentMonth.tm_mon + 1, _currentMonth.tm_year + 1900, 1))
+        {
+            int32_t _loggedTime = 0;
+            // Get the logged hours.
+            if (getWorkHours(&_fileCurrentMonth, _startWeekEpoch, _endWeekEpoch, &_loggedTime))
+            {
+                _weekHours = _loggedTime;
+            }
+
+            // Close the file.
+            _fileCurrentMonth.close();
+        }
+    }
 
     // Return how much employee has wokred.
     return _weekHours;
@@ -993,4 +1022,42 @@ int Logging::findLastLog(struct employeeData *_e, int32_t *_login, int32_t *_log
     }
 
     return 0;
+}
+
+int Logging::getWorkHours(SdFile *_f, int32_t _startEpoch, int32_t _endEpoch, int32_t *_loggedTime)
+{
+    char _oneLine[250];
+    if (_f == NULL || _loggedTime == NULL)
+        return 0;
+
+    if (!_f->available())
+        return 0;
+
+    *_loggedTime = 0;
+
+    while (_f->available())
+    {
+        char c = 0;
+        int k = 0;
+        unsigned long _login = 0;
+        unsigned long _logout = 0;
+        while (c != '\n' && _f->available() && c != 255)
+        {
+            c = _f->read();
+            _oneLine[k++] = c;
+        }
+        _oneLine[k] = 0;
+
+        // If function finds both times (login and logout), it can calculate work hours between logs.
+        if (sscanf(_oneLine, "%lu; %lu;", &_login, &_logout) == 2)
+        {
+            // Just use times that matches start and end of the current week, ingore anything else.
+            if ((_login >= _startEpoch) && (_login <= _endEpoch) && (_logout <= _endEpoch) && (_logout >= _startEpoch))
+            {
+                *_loggedTime += (_logout - _login);
+            }
+        }
+    }
+
+    return 1;
 }

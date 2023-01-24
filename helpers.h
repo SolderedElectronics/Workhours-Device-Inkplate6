@@ -3,16 +3,17 @@
 
 #include "Arduino.h"
 #include "Inkplate.h"
-#include "dataTypes.h"
+#include "defines.h"
 #include "include/icons.h"
 #include <stdio.h>
 #include <string.h>
 #include <sys\time.h>
 #include <time.h>
 
-int mcalculateMonthEpochs(int32_t _currentEpoch, int32_t *_startWeekEpoch, int32_t *_endWeekEpoch);
+int calculateMonthEpochs(int32_t _currentEpoch, int32_t *_startWeekEpoch, int32_t *_endWeekEpoch);
 int calculateWeekdayEpochs(int32_t _currentEpoch, int32_t *_startWeekEpoch, int32_t *_endWeekEpoch);
 int calculateDayEpoch(int32_t _currentEpoch, int32_t *_startDayEpoch, int32_t *_endDayEpoch);
+bool monthChangeDeteced(int32_t _startEpoch, int32_t _endEpoch);
 void fixHTTPResponseText(char *_c);
 char *createImagePath(struct employeeData _e, char *_buffer);
 void createTimeStampFromEpoch(char *_str, int32_t _epoch);

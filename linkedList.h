@@ -2,7 +2,7 @@
 #define __LINKEDLIST_H__
 
 #include "Arduino.h"
-#include "dataTypes.h"
+#include "defines.h"
 
 class LinkedList
 {

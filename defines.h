@@ -48,6 +48,16 @@ const int overtimeHours[] = {0, 9, 9, 9, 9, 4, 0};
 // tag.
 #define LOGGING_LOG_TIMEOUT 600
 
+// Define different types of buzzing sounds
+#define BUZZ_ERROR_QUICK buzzer(2, 150)
+#define BUZZ_SYS_ERROR  buzzer(4, 500);
+#define BUZZ_LOG        buzzer(1, 500)
+#define BUZZ_LOG_ERROR  buzzer(3, 50);
+
+// Define buzzer pin on the I/O expander
+#define BUZZER_PIN IO_PIN_B7
+
+
 // Struct that holds data of the every employee. Can be changed if needed, but the whole code must be updated.
 struct employeeData
 {

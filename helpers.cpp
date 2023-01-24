@@ -1,5 +1,6 @@
 #include "helpers.h"
 
+// Calculates the start and stop epochs of the current month
 int calculateMonthEpochs(int32_t _currentEpoch, int32_t *_startWeekEpoch, int32_t *_endWeekEpoch)
 {
     struct tm _myTime;
@@ -28,6 +29,7 @@ int calculateMonthEpochs(int32_t _currentEpoch, int32_t *_startWeekEpoch, int32_
     return 1;
 }
 
+// NOTE: This function does not anymore handles situation when month change is in the middle of the month!
 int calculateWeekdayEpochs(int32_t _currentEpoch, int32_t *_startWeekEpoch, int32_t *_endWeekEpoch)
 {
     struct tm _myTime;
@@ -42,16 +44,6 @@ int calculateWeekdayEpochs(int32_t _currentEpoch, int32_t *_startWeekEpoch, int3
 
     int32_t _startWeek = _currentEpoch - (x * 86400);
     int32_t _endWeek = _currentEpoch + ((6 - x + 1) * 86400) - 1;
-
-    if (_endWeek > _endMonth)
-    {
-        _endWeek -= _endWeek - _endMonth;
-    }
-
-    if (_startWeek < _startMonth)
-    {
-        _startWeek -= _startWeek - _startMonth;
-    }
 
     *_startWeekEpoch = _startWeek;
     *_endWeekEpoch = _endWeek;
@@ -83,6 +75,38 @@ int calculateDayEpoch(int32_t _currentEpoch, int32_t *_startDayEpoch, int32_t *_
     *_endDayEpoch = _endDay;
 
     return 1;
+}
+
+
+// Check if there is a month has changed in a period between two epochs.
+bool monthChangeDeteced(int32_t _startEpoch, int32_t _endEpoch)
+{
+    // Variables for storing month of both epochs.
+    int _m1, _m2;
+
+    // Create struct for time and date.
+    struct tm _t;
+
+    // Clear the whole struct for time and date.
+    memset(&_t, 0, sizeof(_t));
+    
+    // Save the epochs in time_t variable.
+    const time_t _time1 = _startEpoch;
+    const time_t _time2 = _endEpoch;
+    
+    // Convert epoch timestamp of the start of the week into human readable time and date.
+    memcpy(&_t, localtime(&_time1), sizeof(_t));
+
+    // Save the month
+    _m1 = _t.tm_mon;
+
+    // Do the same, but now for the _endEpoch.
+    memset(&_t, 0, sizeof(_t));
+    memcpy(&_t, localtime(&_time2), sizeof(_t));
+    _m2 = _t.tm_mon;
+
+    // Retrun if the month has changed (true if it is, false if not).
+    return (_m1 != _m2?true:false);
 }
 
 void fixHTTPResponseText(char *_c)

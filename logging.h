@@ -2,7 +2,7 @@
 #define __LOGGING_H__
 
 #include "Inkplate.h"
-#include "dataTypes.h"
+#include "defines.h"
 #include "helpers.h"
 #include "linkedList.h"
 
@@ -26,6 +26,7 @@ class Logging
     int createDailyReport();
     int getEmployeeFile(SdFile *_myFile, struct employeeData *_employee, int _month, int _year, int _rawFlag);
     int findLastLog(struct employeeData *_e, int32_t *_login, int32_t *_logout);
+    int getWorkHours(SdFile *_f, int32_t _startEpoch, int32_t _endEpoch, int32_t *_loggedTime);
 
   private:
     struct employeeData *employees;

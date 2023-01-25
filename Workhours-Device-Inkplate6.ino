@@ -19,8 +19,8 @@ LinkedList myList;
 Logging logger;
 
 // Change WiFi and IP data to suit your setup.
-char ssid[] = "Soldered";
-char pass[] = "dasduino";
+char ssid[] = "";
+char pass[] = "";
 // Set your Static IP address
 IPAddress localIP(192, 168, 2, 200); // IP address should be set to desired address
 // Set your Gateway IP address
@@ -501,8 +501,6 @@ void dailyReportScreen()
 // Do not connect buzzer directly to the IO expander!
 void buzzer(uint8_t n, int _ms)
 {
-    return;
-    delay(100);
     for (int i = 0; i < n; i++)
     {
         unsigned long _timer1 = millis();
@@ -514,7 +512,6 @@ void buzzer(uint8_t n, int _ms)
         _timer1 = millis();
         while((unsigned long)(millis() - _timer1) < _ms);
     }
-    delay(100);
 }
 
 // Function that handles all requests for the client.

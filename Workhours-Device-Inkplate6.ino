@@ -204,9 +204,7 @@ void loop()
         mainDraw();
         changeNeeded = 1;
     }
-
-    // Periodically refresh screen every 60 seconds.
-    if ((unsigned long)(millis() - periodicRefresh) >= 60000UL)
+    else if ((unsigned long)(millis() - periodicRefresh) >= 60000UL)     // Periodically refresh screen every 60 seconds.
     {
         periodicRefresh = millis();
         display.clearDisplay();
@@ -251,10 +249,10 @@ void loop()
         // Calculate the time for the next.
         logger.calculateNextDailyReport();
 
-        // Update the time
+        // Update the time.
         fetchTime();
 
-        // Wait for 10 seconds (daily report is activated 10 seconds before midnight)
+        // Wait for 10 seconds (daily report is activated 10 seconds before midnight).
         delay(10000);
     }
 }
@@ -346,37 +344,38 @@ void login(struct employeeData *_w)
 {
     // Code for login screen
 
+    // Make a sound.
+    BUZZ_LOG;
+
     // Array for the image path on the microSD card.
     char _imagePath[200];
 
     // Write the data on the display.
     display.setTextSize(1);
     display.setFont(&Inter16pt7b);
-    display.setCursor(250, 360);
+    display.setCursor(350, 30);
     display.clearDisplay();
     display.print("First name:  ");
     display.print(_w->firstName);
-    display.setCursor(250, 400);
+    display.setCursor(350, 60);
     display.print("Last name:  ");
     display.print(_w->lastName);
-    display.setCursor(250, 440);
+    display.setCursor(350, 90);
     display.print("ID:  ");
     display.print(_w->ID);
-    display.printf(" [%s]", _w->department);
-    display.setCursor(250, 530);
+    display.setCursor(350, 120);
+    display.print(_w->department);
+    display.setCursor(350, 190);
     display.print("Login");
 
     // Create path to the image on the microSD card
     createImagePath((*_w), _imagePath);
 
     // Try to display it. If not, use default image.
-    if (!(display.drawImage(_imagePath, 250, 20, 1, 0)))
+    if (!(display.drawImage(_imagePath, 5, 5, 1, 0)))
     {
-        display.drawImage(DEFAULT_IMAGE_PATH, 250, 20, 1, 0);
+        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 0);
     }
-
-    // Make a sound.
-    BUZZ_LOG;
 
     // Set variables for screen update and timeout.
     menuTimeout = millis();
@@ -387,6 +386,9 @@ void login(struct employeeData *_w)
 void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
 {
     // Code for logout screen
+    
+    // Make a sound.
+    BUZZ_LOG;
 
     // Array for the image path on the microSD card.
     char _imagePath[200];
@@ -394,35 +396,33 @@ void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
     // Write the data on the display.
     display.setTextSize(1);
     display.setFont(&Inter16pt7b);
-    display.setCursor(250, 360);
+    display.setCursor(350, 30);
     display.clearDisplay();
     display.print("Name:  ");
     display.print(_w->firstName);
-    display.setCursor(250, 400);
+    display.setCursor(350, 60);
     display.print("Last name:  ");
     display.print(_w->lastName);
-    display.setCursor(250, 440);
+    display.setCursor(350, 90);
     display.print("ID:  ");
     display.print(_w->ID);
-    display.printf(" [%s]", _w->department);
-    display.setCursor(250, 530);
-    display.print("Logout");
-    display.setCursor(250, 470);
+    display.setCursor(350, 120);
+    display.print(_w->department);
+    display.setCursor(350, 150);
     display.printf("Daily: %2d:%02d:%02d", _dailyHours / 3600, _dailyHours / 60 % 60, _dailyHours % 60);
-    display.setCursor(250, 570);
+    display.setCursor(350, 180);
     display.printf("Weekly: %2d:%02d:%02d", _weekHours / 3600, _weekHours / 60 % 60, _weekHours % 60);
+    display.setCursor(350, 250);
+    display.print("Logout");
 
     // Create path to the image on the microSD card
     createImagePath((*_w), _imagePath);
 
     // Try to display it. If not, use default image.
-    if (!(display.drawImage(_imagePath, 250, 20, 1, 0)))
+    if (!(display.drawImage(_imagePath, 5, 5, 1, 0)))
     {
-        display.drawImage(DEFAULT_IMAGE_PATH, 250, 20, 1, 0);
+        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 0);
     }
-
-    // Make a sound.
-    BUZZ_LOG;
 
     // Set variables for screen update and timeout.
     menuTimeout = millis();
@@ -476,6 +476,7 @@ void tagLoggingError()
 // This screen will appear if the microSD card is missing while loging in or loging out.
 void errorDisplay()
 {
+    BUZZ_SYS_ERROR;
     display.setTextSize(1);
     display.setFont(&Inter16pt7b);
     display.setCursor(0, 30);

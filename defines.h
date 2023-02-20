@@ -6,7 +6,7 @@
 // Secret key used for adding or deleting employees
 #define SECRET_KEY "password12"
 // Maximum is 49 chars long...just in case! :)
-#define SECRET_KEY_LEN  10
+#define SECRET_KEY_LEN 10
 
 // How long to keep menu active
 #define LOG_SCREEN_TIME 10000UL
@@ -17,10 +17,10 @@
 #define DEFAULT_IMAGE_PATH  DEFAULT_FOLDER_NAME "/" DEFAULT_IMAGE_NAME
 
 // Fonts
-#define FONT_FILENAME       "SourceSansPro-Regular.ttf"
-#define FONT_NAME           "SourceSansPro"
-#define FONT_TYPE           "Regular"
-#define FONT_FORMAT         "opentype"
+#define FONT_FILENAME "SourceSansPro-Regular.ttf"
+#define FONT_NAME     "SourceSansPro"
+#define FONT_TYPE     "Regular"
+#define FONT_FORMAT   "opentype"
 
 // Tag for missed logout in the list.
 #define LOGGING_ERROR_STRING "??????????"
@@ -50,9 +50,9 @@ const int overtimeHours[] = {0, 9, 9, 9, 9, 4, 0};
 
 // Define different types of buzzing sounds
 #define BUZZ_ERROR_QUICK buzzer(2, 150)
-#define BUZZ_SYS_ERROR  buzzer(4, 500);
-#define BUZZ_LOG        buzzer(1, 500)
-#define BUZZ_LOG_ERROR  buzzer(3, 50);
+#define BUZZ_SYS_ERROR   buzzer(4, 500);
+#define BUZZ_LOG         buzzer(1, 500)
+#define BUZZ_LOG_ERROR   buzzer(3, 50);
 
 // Define buzzer pin on the I/O expander
 #define BUZZER_PIN IO_PIN_B7

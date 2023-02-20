@@ -89,11 +89,11 @@ bool monthChangeDeteced(int32_t _startEpoch, int32_t _endEpoch)
 
     // Clear the whole struct for time and date.
     memset(&_t, 0, sizeof(_t));
-    
+
     // Save the epochs in time_t variable.
     const time_t _time1 = _startEpoch;
     const time_t _time2 = _endEpoch;
-    
+
     // Convert epoch timestamp of the start of the week into human readable time and date.
     memcpy(&_t, localtime(&_time1), sizeof(_t));
 
@@ -106,7 +106,7 @@ bool monthChangeDeteced(int32_t _startEpoch, int32_t _endEpoch)
     _m2 = _t.tm_mon;
 
     // Retrun if the month has changed (true if it is, false if not).
-    return (_m1 != _m2?true:false);
+    return (_m1 != _m2 ? true : false);
 }
 
 void fixHTTPResponseText(char *_c)
@@ -230,14 +230,15 @@ int sendIcon(WiFiClient *_client, SdFat *_sd)
     }
 
     // Allocate  memory for the favicon file.
-    _buffer = (uint8_t*)ps_malloc(_myFile.fileSize());
-    if (_buffer == NULL) return 0;
+    _buffer = (uint8_t *)ps_malloc(_myFile.fileSize());
+    if (_buffer == NULL)
+        return 0;
 
     // Read it!
     _myFile.read(_buffer, _myFile.fileSize());
 
     // Send it to the client
-    _client->write(_buffer, _myFile.fileSize());    
+    _client->write(_buffer, _myFile.fileSize());
 
     // Close the file
     _myFile.close();
@@ -271,7 +272,8 @@ void removeEmployeeData(SdFat *_sd, employeeData *_employee)
 
     // Make folder name
     char _folderName[250];
-    snprintf(_folderName, sizeof(_folderName), "%s%s%llu", _employee->firstName, _employee->lastName, (unsigned long long)(_employee->ID));
+    snprintf(_folderName, sizeof(_folderName), "%s%s%llu", _employee->firstName, _employee->lastName,
+             (unsigned long long)(_employee->ID));
 
     Serial.print(_folderName);
 

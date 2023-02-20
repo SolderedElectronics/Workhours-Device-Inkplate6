@@ -24,10 +24,11 @@ char pass[] = "";
 // Set your Static IP address
 IPAddress localIP(192, 168, 2, 200); // IP address should be set to desired address
 // Set your Gateway IP address
-IPAddress gateway(192, 168, 2, 1); // Gateway address (in most cases it's the first address of selected IP addreess subnet)
-IPAddress subnet(255, 255, 255, 0); // Subnet mask
-IPAddress primaryDNS(192, 168, 2, 1);   // Primary DNS (use router / ISP DNS as primary one)
-IPAddress secondaryDNS(8, 8, 4, 4); // Secondary DNS (use google as secondary one)
+// Gateway address (in most cases it's the first address of selected IP addreess subnet)
+IPAddress gateway(192, 168, 2, 1);
+IPAddress subnet(255, 255, 255, 0);   // Subnet mask
+IPAddress primaryDNS(192, 168, 2, 1); // Primary DNS (use router / ISP DNS as primary one)
+IPAddress secondaryDNS(8, 8, 4, 4);   // Secondary DNS (use google as secondary one)
 
 // Global variables.
 // Used for menu refreshing.
@@ -114,9 +115,9 @@ void setup()
     display.partialUpdate();
     if (!fetchTime())
     {
-        BUZZ_SYS_ERROR;
         display.print("Failed! Please reset the device.");
         display.partialUpdate();
+        BUZZ_SYS_ERROR;
         while (true)
             ;
     }
@@ -204,13 +205,13 @@ void loop()
         mainDraw();
         changeNeeded = 1;
     }
-    else if ((unsigned long)(millis() - periodicRefresh) >= 60000UL)     // Periodically refresh screen every 60 seconds.
+    else if ((unsigned long)(millis() - periodicRefresh) >= 60000UL) // Periodically refresh screen every 60 seconds.
     {
         periodicRefresh = millis();
         display.clearDisplay();
         mainDraw();
         changeNeeded = 1;
-        
+
         // Update the RTC data.
         display.rtcGetRtcData(); // Get RTC data
     }
@@ -299,7 +300,8 @@ int fetchTime()
 
         // Find the start of the JSON file
         _jsonStart = strchr(_temp, '{');
-        if (_jsonStart == NULL) return 0;
+        if (_jsonStart == NULL)
+            return 0;
 
         // Deserialize the JSON file.
         _err = deserializeJson(_doc, _jsonStart);
@@ -386,7 +388,7 @@ void login(struct employeeData *_w)
 void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
 {
     // Code for logout screen
-    
+
     // Make a sound.
     BUZZ_LOG;
 
@@ -505,13 +507,14 @@ void buzzer(uint8_t n, int _ms)
     for (int i = 0; i < n; i++)
     {
         unsigned long _timer1 = millis();
-        while((unsigned long)(millis() - _timer1) < _ms)
+        while ((unsigned long)(millis() - _timer1) < _ms)
         {
             display.digitalWriteIO(BUZZER_PIN, HIGH, IO_INT_ADDR);
             display.digitalWriteIO(BUZZER_PIN, LOW, IO_INT_ADDR);
         }
         _timer1 = millis();
-        while((unsigned long)(millis() - _timer1) < _ms);
+        while ((unsigned long)(millis() - _timer1) < _ms)
+            ;
     }
 }
 
@@ -746,12 +749,14 @@ void doServer(WiFiClient *client)
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
-        
-        // Parse the input data. There should be 6 items parsed. 
-        int _res = sscanf(temp, "addworker/?name=%[^'&']&lname=%[^'&']&tagID=%llu&department=%[^'&']&image=%[^'&']&key=%s", tempFName,
-                   tempLName, &(tempID), tempDepartment, tempImage, tempKey);
 
-        // Fix http text for all string inputs (covert HEX into ASCII, for example '# sign is in HTTp response %23 - 0x23 is in ASCII '#').
+        // Parse the input data. There should be 6 items parsed.
+        int _res =
+            sscanf(temp, "addworker/?name=%[^'&']&lname=%[^'&']&tagID=%llu&department=%[^'&']&image=%[^'&']&key=%s",
+                   tempFName, tempLName, &(tempID), tempDepartment, tempImage, tempKey);
+
+        // Fix http text for all string inputs (covert HEX into ASCII, for example '# sign is in HTTp response %23 -
+        // 0x23 is in ASCII '#').
         fixHTTPResponseText(tempFName);
         fixHTTPResponseText(tempLName);
         fixHTTPResponseText(tempDepartment);
@@ -759,7 +764,8 @@ void doServer(WiFiClient *client)
         fixHTTPResponseText(tempKey);
 
         Serial.println(temp);
-        Serial.printf("Add worker: Name: %s Last name: %s ID; %llu Depart: %s Image: %s\r\n", tempFName, tempLName, tempID, tempDepartment, tempImage);
+        Serial.printf("Add worker: Name: %s Last name: %s ID; %llu Depart: %s Image: %s\r\n", tempFName, tempLName,
+                      tempID, tempDepartment, tempImage);
 
         // If the data is ok and key is vaild, add the employee.
         if (_res == 6 && strstr(tempKey, SECRET_KEY) != NULL)
@@ -874,8 +880,9 @@ void doServer(WiFiClient *client)
         if (_subString != NULL)
         {
             // Try to get the data from the string
-            int _res = sscanf(_subString, "/?remove=%lld&dataRemoval=%d&key=%s", (unsigned long long *)(&_idToRemove), &_removeEmployeeDataFlag, _tempKey);
-            
+            int _res = sscanf(_subString, "/?remove=%lld&dataRemoval=%d&key=%s", (unsigned long long *)(&_idToRemove),
+                              &_removeEmployeeDataFlag, _tempKey);
+
             // Try to fix HTTP response (convert HTTP HEX into ASCII)
             fixHTTPResponseText(_tempKey);
 
@@ -1280,7 +1287,8 @@ void doServer(WiFiClient *client)
             client->println("</label><br>");
         }
         client->println("            <label for=\"dataRemoval\">Remove all employee data from the storage? </label>");
-        client->println("            <input type=\"checkbox\" id=\"dataRemoval\" name=\"dataRemoval\" value=\"1\"><br>");
+        client->println(
+            "            <input type=\"checkbox\" id=\"dataRemoval\" name=\"dataRemoval\" value=\"1\"><br>");
         client->println("            <label for=\"password\">Password</label>");
         client->println("            <input type=\"password\" id =\"key\" name=\"key\"><br>");
         client->println("            <input type =\"submit\" value =\"Remove\">");
@@ -1345,7 +1353,7 @@ void doServer(WiFiClient *client)
                         if (logger.findLastLog(employee, &lastLoginInList, &lastLogoutInList))
                         {
                             // Send data to the client. Note that is different calculation if logout is done.
-                            if (lastLogoutInList == 0 && lastLoginInList !=0)
+                            if (lastLogoutInList == 0 && lastLoginInList != 0)
                             {
                                 // Add current time to the dayhours and weekhours (because logout is not done yet)
                                 dayHours += ((int32_t)(display.rtcGetEpoch()) - lastLoginInList);
@@ -1368,7 +1376,8 @@ void doServer(WiFiClient *client)
                                 client->printf(
                                     "Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: %s\r\nLogout: %s\r",
                                     dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600,
-                                    weekHours / 60 % 60, weekHours % 60, lastLogin != -1?loginTimestampStr:"----", lastLogout != -1?logoutTimestampStr:"----");
+                                    weekHours / 60 % 60, weekHours % 60, lastLogin != -1 ? loginTimestampStr : "----",
+                                    lastLogout != -1 ? logoutTimestampStr : "----");
                             }
                         }
                         else

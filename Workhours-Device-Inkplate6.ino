@@ -21,13 +21,13 @@ WiFiServer server(80);
 uint32_t refreshes = 0;
 time_t read_epoch;
 // Set your Static IP address
-IPAddress local_IP(192, 168, 1, 152);  // IP address should be set to desired address
+IPAddress local_IP(192, 168, 71, 152);  // IP address should be set to desired address
 // Set your Gateway IP address
-IPAddress gateway(192, 168, 1, 1);   // Gateway address should match IP address
+IPAddress gateway(192, 168, 71, 1);   // Gateway address should match IP address
 
 IPAddress subnet(255, 255, 255, 0);
-IPAddress primaryDNS(8, 8, 8, 8);   //optional
-IPAddress secondaryDNS(8, 8, 4, 4); //optional
+IPAddress primaryDNS(192, 168, 71, 1);   //optional
+IPAddress secondaryDNS(8, 8, 8, 8); //optional
 
 char ssid[] = "";
 char pass[] = "";

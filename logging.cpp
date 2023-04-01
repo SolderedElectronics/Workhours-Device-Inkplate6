@@ -640,6 +640,7 @@ int32_t Logging::getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch)
     // Check if month change has occured in one week. If so, two files needs to be opened.
     if (monthChangeDeteced(_startWeekEpoch, _endWeekEpoch))
     {
+        // Variables to store human readable time and date data.
         struct tm _prevMonthTd;
         struct tm _currentMonthTd;
 
@@ -647,29 +648,28 @@ int32_t Logging::getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch)
         memset(&_prevMonthTd, 0, sizeof(_prevMonthTd));
         memset(&_currentMonthTd, 0, sizeof(_currentMonthTd));
 
-        // Convert epoch to the human readable time and date
-        memcpy(&_prevMonthTd, localtime(&_epochInternal), sizeof(_prevMonthTd));
-        memcpy(&_currentMonthTd, localtime(&_epochInternal), sizeof(_currentMonthTd));
+        // Convert epoch to the human readable time and date.
+        // Use start of the week as "prev. month" and end of the week as a "curent month"
+        memcpy(&_prevMonthTd, localtime((const time_t*)(&_startWeekEpoch)), sizeof(_prevMonthTd));
+        memcpy(&_currentMonthTd, localtime((const time_t*)(&_endWeekEpoch)), sizeof(_currentMonthTd));
 
-        // Modify the time and date struct by going one month back in time.
-        _prevMonthTd.tm_mon -= 1;
-
-        // Update the whole time and date struct.
-        mktime(&_prevMonthTd);
-
-        // Try to open file for the current month.
-        if (getEmployeeFile(&_filePrevMonth, _employee, _prevMonthTd.tm_mon + 1, _prevMonthTd.tm_year + 1900, 1) &&
-            getEmployeeFile(&_fileCurrentMonth, _employee, _currentMonthTd.tm_mon + 1, _currentMonthTd.tm_year + 1900,
-                            1))
+        // Try to open file for the current month. Check only for prev. month as this time and date data are from start of the week epoch.
+        // If we cannot opet first file, we def. cannot open a second (and also there is a situation where there is a month change in a week
+        // but it's still not a "next month", so there is no file for it.)
+        if (getEmployeeFile(&_filePrevMonth, _employee, _prevMonthTd.tm_mon + 1, _prevMonthTd.tm_year + 1900, 1))
         {
+            // Try to open and get employee file for the "current month" (or next month).
+            getEmployeeFile(&_fileCurrentMonth, _employee, _currentMonthTd.tm_mon + 1, _currentMonthTd.tm_year + 1900, 1);
+
             // Variables for logged time for both months.
             int32_t _loggedTimePrevMonth = 0;
             int32_t _loggedTimeCurrMonth = 0;
 
-            // Get the week hours of both months.
-            if (getWorkHours(&_filePrevMonth, _startWeekEpoch, _endWeekEpoch, &_loggedTimePrevMonth) &&
-                getWorkHours(&_fileCurrentMonth, _startWeekEpoch, _endWeekEpoch, &_loggedTimeCurrMonth))
+            // Get the week hours of both months (but for the same reason as mentioned above, open only "prev. month")
+            if (getWorkHours(&_filePrevMonth, _startWeekEpoch, _endWeekEpoch, &_loggedTimePrevMonth))
             {
+                getWorkHours(&_fileCurrentMonth, _startWeekEpoch, _endWeekEpoch, &_loggedTimeCurrMonth);
+
                 // Sum both of the logged times (from prev and current month).
                 _weekHours = _loggedTimeCurrMonth + _loggedTimePrevMonth;
 
@@ -680,7 +680,6 @@ int32_t Logging::getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch)
         }
         else
         {
-            // Something went wrong... Return -1 indicating an error.
             return -1;
         }
     }
@@ -1056,6 +1055,7 @@ int Logging::getWorkHours(SdFile *_f, int32_t _startEpoch, int32_t _endEpoch, in
             {
                 *_loggedTime += (_logout - _login);
             }
+            Serial.println();
         }
     }
 

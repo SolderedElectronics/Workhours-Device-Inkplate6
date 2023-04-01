@@ -22,7 +22,7 @@ Logging logger;
 char ssid[] = "";
 char pass[] = "";
 // Set your Static IP address
-IPAddress localIP(192, 168, 2, 200); // IP address should be set to desired address
+IPAddress localIP(192, 168, 2, 150); // IP address should be set to desired address
 // Set your Gateway IP address
 // Gateway address (in most cases it's the first address of selected IP addreess subnet)
 IPAddress gateway(192, 168, 2, 1);

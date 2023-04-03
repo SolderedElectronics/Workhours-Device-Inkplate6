@@ -195,6 +195,23 @@ void loop()
             // Show error message
             tagLoggingError();
         }
+
+        // Wait until there is no more data from the Serial (from the RFID tag reader).
+        // Otherwise it can detect RFID Tag read multiple times in a row.
+        // Solution is to wait until RFID stop sending the data. And also, flush the serial buffer.
+        unsigned long rfidTimeout = millis();
+
+        while ((unsigned long)(millis() - rfidTimeout) < 250UL)
+        {
+            if (Serial2.available())
+            {
+                rfidTimeout = millis();
+                while (Serial2.available())
+                {
+                    Serial2.read();
+                }
+            }
+        }
     }
 
     // If menu is active, return to the main screen after some times (defied in LOG_SCREEN_TIME).
@@ -256,6 +273,9 @@ void loop()
         // Wait for 10 seconds (daily report is activated 10 seconds before midnight).
         delay(10000);
     }
+
+    // Added for RTOS. Otherwise web server sometimes does not respond.
+    delay(50);
 }
 
 // Get the time from the web (time.api). If everything went ok, Inkplate RTC will be set to the correct time.

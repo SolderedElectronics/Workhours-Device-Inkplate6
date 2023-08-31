@@ -338,7 +338,7 @@ uint64_t Logging::getTagID()
         _buffer[_n] = 0;
 
         // Convert string to integer.
-        sscanf(_buffer, "%llu", &_tag);
+        sscanf(_buffer, "$%llu", &_tag);
     }
 
     return _tag;

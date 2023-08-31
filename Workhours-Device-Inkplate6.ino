@@ -19,15 +19,15 @@ LinkedList myList;
 Logging logger;
 
 // Change WiFi and IP data to suit your setup.
-char ssid[] = "";
-char pass[] = "";
+char ssid[] = "Soldered";
+char pass[] = "dasduino";
 // Set your Static IP address
-IPAddress localIP(192, 168, 2, 150); // IP address should be set to desired address
+IPAddress localIP(192, 168, 71, 99); // IP address should be set to desired address
 // Set your Gateway IP address
 // Gateway address (in most cases it's the first address of selected IP addreess subnet)
-IPAddress gateway(192, 168, 2, 1);
+IPAddress gateway(192, 168, 71, 1);
 IPAddress subnet(255, 255, 255, 0);   // Subnet mask
-IPAddress primaryDNS(192, 168, 2, 1); // Primary DNS (use router / ISP DNS as primary one)
+IPAddress primaryDNS(192, 168, 71, 1); // Primary DNS (use router / ISP DNS as primary one)
 IPAddress secondaryDNS(8, 8, 4, 4);   // Secondary DNS (use google as secondary one)
 
 // Global variables.
@@ -201,7 +201,7 @@ void loop()
         // Solution is to wait until RFID stop sending the data. And also, flush the serial buffer.
         unsigned long rfidTimeout = millis();
 
-        while ((unsigned long)(millis() - rfidTimeout) < 250UL)
+        while ((unsigned long)(millis() - rfidTimeout) < 500UL)
         {
             if (Serial2.available())
             {
@@ -222,7 +222,7 @@ void loop()
         mainDraw();
         changeNeeded = 1;
     }
-    else if ((unsigned long)(millis() - periodicRefresh) >= 60000UL) // Periodically refresh screen every 60 seconds.
+    else if ((menuTimeout == 0) &&(unsigned long)(millis() - periodicRefresh) >= 60000UL) // Periodically refresh screen every 60 seconds.
     {
         periodicRefresh = millis();
         display.clearDisplay();

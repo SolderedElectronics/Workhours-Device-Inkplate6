@@ -394,9 +394,9 @@ void login(struct employeeData *_w)
     createImagePath((*_w), _imagePath);
 
     // Try to display it. If not, use default image.
-    if (!(display.drawImage(_imagePath, 5, 5, 1, 0)))
+    if (!(display.drawImage(_imagePath, 5, 5, 1, 1)))
     {
-        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 0);
+        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 1);
     }
 
     // Set variables for screen update and timeout.
@@ -441,9 +441,9 @@ void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
     createImagePath((*_w), _imagePath);
 
     // Try to display it. If not, use default image.
-    if (!(display.drawImage(_imagePath, 5, 5, 1, 0)))
+    if (!(display.drawImage(_imagePath, 5, 5, 1, 1)))
     {
-        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 0);
+        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 1);
     }
 
     // Set variables for screen update and timeout.

@@ -308,7 +308,7 @@ uint64_t Logging::getTagID()
 
     // Array for storing chars from serial. Tags have max 10 digits + enter (LF, CR) and one more for '\0' = 13
     // elements.
-    char _buffer[13];
+    char _buffer[40];
 
     // Variable for storing one char from serial.
     char _c = 0;
@@ -316,19 +316,23 @@ uint64_t Logging::getTagID()
     // Variable for RFID Tag.
     unsigned long long _tag = 0;
 
+    // Set whole buffer to 0.
+    memset(_buffer, 0, sizeof(_buffer));
+
     // Try to catch all datra from RFID reader. Wait for timeout to occur or more than 10 chars have been received or
     // cacth new line. New line means successful
-    while (((unsigned long)(millis() - _timer1) < 10) && (_n < 13) && (_c != '\n'))
+    while (((unsigned long)(millis() - _timer1) < 10) && (_n < 38))
     {
         if (Serial2.available())
         {
             _c = Serial2.read();
-            _buffer[_n++] = _c;
+            if (_n < 38) _buffer[_n++] = _c;
+            _timer1 = millis();
         }
     }
 
-    // If more than 13 chars have been received, something is not right...
-    if (_n >= 13)
+    // If more than 32 chars have been received, something is not right...
+    if (_n >= 32)
         return 0;
 
     // Last char is new line? Nice! All data from RFID reader have been successfully stored.
@@ -338,7 +342,7 @@ uint64_t Logging::getTagID()
         _buffer[_n] = 0;
 
         // Convert string to integer.
-        sscanf(_buffer, "$%llu", &_tag);
+        sscanf(_buffer, "$%llu&", &_tag);
     }
 
     return _tag;

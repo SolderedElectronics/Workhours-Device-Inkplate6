@@ -104,10 +104,10 @@ int Logging::getEnteries(SdFile *_file)
 int Logging::fillEmployees(SdFile *_file)
 {
     // Temp arrays for storing data.
-    char ime[50];
-    char prezime[50];
+    char name[50];
+    char lastName[50];
     char id[20];
-    char slika[200];
+    char image[200];
     char department[100];
 
     // Array for storing one line of .csv file.
@@ -142,10 +142,10 @@ int Logging::fillEmployees(SdFile *_file)
 
         // Parse it using sscanf function. %[^';'] means that semicolon will terminate the string. For successful
         // parsing, sscanf() must find 4 variables / arrays.
-        if (sscanf(oneLine, "%[^';']; %[^';']; %[^';']; %[^';']; %[^';']; \r\n", ime, prezime, id, department, slika) ==
+        if (sscanf(oneLine, "%[^','], %[^','], %[^','], %[^','], %[^',']\r\n", name, lastName, id, department, image) ==
             5)
         {
-            _link->addEmployee(ime, prezime, atoi(id), slika, department);
+            _link->addEmployee(name, lastName, atoi(id), image, department);
         }
     }
 
@@ -258,7 +258,7 @@ int Logging::updateEmployeeFile()
     }
 
     // Make a header for the .csv file (so user know what each column represents)
-    _file.println("First name; Last Name; Tag ID; Department; Image Filename;");
+    _file.println("First name,Last Name,Tag ID,Department,Image Filename,");
 
     // Fill the file with employee data.
 
@@ -275,7 +275,7 @@ int Logging::updateEmployeeFile()
         char _oneRow[500];
 
         // Create one line of .csv file filled with data.
-        sprintf(_oneRow, "%s; %s; %llu; %s; %s;\r\n", _list->firstName, _list->lastName,
+        sprintf(_oneRow, "%s,%s,%llu,%s,%s,\r\n", _list->firstName, _list->lastName,
                 (unsigned long long)(_list->ID), _list->department, _list->image);
 
         // Write that line to the file on uSD.
@@ -435,7 +435,7 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
                 {
                     // Add Special string defined in dataTypes.h
                     myFile.print(LOGGING_ERROR_STRING);
-                    myFile.println("; ");
+                    myFile.println();
 
                     // Change flag to login
                     _logInOutTag = LOGGING_TAG_LOGIN;
@@ -443,16 +443,18 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
 
                 // Log the data!
                 char oneLine[100];
-                sprintf(oneLine, "%lu; ", _epoch);
+                sprintf(oneLine, "%lu", _epoch);
 
                 // If it's a logout tag, send a new line at the end of the string (log time), otherwise don't.
                 if (_logInOutTag == LOGGING_TAG_LOGOUT)
                 {
-                    myFile.println(oneLine);
+                    myFile.print(oneLine);
+                    myFile.println(' ');
                 }
                 else
                 {
                     myFile.print(oneLine);
+                    myFile.print(', ');
                 }
 
                 // Close the file (send data to the uSD card).
@@ -537,13 +539,13 @@ int Logging::findLastEntry(SdFile *_f, int32_t *_epoch, uint8_t *_log)
     _currentLine[_k] = '\0';
 
     // Try to parse line before the last line in the file.
-    _resultPrev = sscanf(_prevLine, "%llu; %llu", &_time1, &_time2);
+    _resultPrev = sscanf(_prevLine, "%llu,%llu", &_time1, &_time2);
 
     // If line cannot be parsed, that means it's the header of the file (so this is the first line with acctual data)
     if (_resultPrev == 0)
     {
         // Now try to see if it's a empty line or it has login data
-        _resultCurrent = sscanf(_currentLine, "%llu; %llu", &_time3, &_time4);
+        _resultCurrent = sscanf(_currentLine, "%llu,%llu", &_time3, &_time4);
 
         if (_resultCurrent == 0 || _resultCurrent == -1)
         {
@@ -573,7 +575,7 @@ int Logging::findLastEntry(SdFile *_f, int32_t *_epoch, uint8_t *_log)
     }
 
     // Try to parse current line and see what you got.
-    _resultCurrent = sscanf(_currentLine, "%llu; %llu;", &_time3, &_time4);
+    _resultCurrent = sscanf(_currentLine, "%llu,%llu", &_time3, &_time4);
 
     if (_resultCurrent == 0)
     {
@@ -779,7 +781,7 @@ int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t
 
         // If function finds both times (login and logout), it can calculate work hours between logs.
         int _dataFound = 0;
-        _dataFound = sscanf(_oneLine, "%lu; %lu;", &_login, &_logout);
+        _dataFound = sscanf(_oneLine, "%lu,%lu", &_login, &_logout);
         if (_dataFound > 0)
         {
             // Just use times that matches start and end of the current day, ingore anything else.
@@ -887,9 +889,9 @@ int Logging::createDailyReport()
         // Get the employee data
         struct employeeData *_e = _link->getEmployee(i);
 
-        int32_t _firstLoginEpoch;
-        int32_t _lastLogoutEpoch;
-        int32_t _workHours;
+        int32_t _firstLoginEpoch = 0;
+        int32_t _lastLogoutEpoch = 0;
+        int32_t _workHours = 0;
         int32_t _overtime = 0;
         int _missedLogout = 0;
         char _timestampLoginStr[30];
@@ -899,7 +901,7 @@ int Logging::createDailyReport()
         _workHours =
             getEmployeeDailyHours(_e->ID, _dailyReportEpoch, &_firstLoginEpoch, &_lastLogoutEpoch, &_missedLogout);
 
-        if (_workHours != 0)
+        if (_workHours != 0 && (_firstLoginEpoch != -1 || _firstLoginEpoch != 0))
         {
             // Create timestamp strings for login and logout times
             createTimeStampFromEpoch(_timestampLoginStr, _firstLoginEpoch);
@@ -916,7 +918,7 @@ int Logging::createDailyReport()
                 // Try to create the file, if file create failed, something is wrong, abort, abort!
                 if (_myFile.open(_pathStr, O_CREAT | O_RDWR))
                 {
-                    _myFile.println("DOW; Time; Date; First Login; Last Logout; Work Time; Overtime; Missed logout;");
+                    _myFile.println("DOW, Time, Date, First Login, Last Logout, Work Time, Overtime, Missed logout");
                     _myFile.close();
                 }
             }
@@ -937,7 +939,7 @@ int Logging::createDailyReport()
                 _overtime = 0;
 
             // Write one line of the data into the file.
-            sprintf(_pathStr, "%s;%02d:%02d:%02d;%02d/%02d/%04d;%s;%s;%02d:%02d:%02d;%02d:%02d:%02d;%c",
+            sprintf(_pathStr, "%s,%02d:%02d:%02d,%02d/%02d/%04d,%s,%s,%02d:%02d:%02d,%02d:%02d:%02d,%c",
                     wdayName[_myTime.tm_wday], _myTime.tm_hour, _myTime.tm_min, _myTime.tm_sec, _myTime.tm_mday,
                     _myTime.tm_mon + 1, _myTime.tm_year + 1900, _timestampLoginStr,
                     _lastLogoutEpoch != -1 ? _timestampLogoutStr : LOGGING_ERROR_STRING, _workHours / 3600,
@@ -1012,7 +1014,7 @@ int Logging::findLastLog(struct employeeData *_e, int32_t *_login, int32_t *_log
         _myFile.close();
 
         // Parse the data
-        sscanf(_oneLine, "%llu; %llu", &_log1, &_log2);
+        sscanf(_oneLine, "%llu,%llu", &_log1, &_log2);
 
         // Save the data
         if (_login != NULL)
@@ -1052,7 +1054,7 @@ int Logging::getWorkHours(SdFile *_f, int32_t _startEpoch, int32_t _endEpoch, in
         _oneLine[k] = 0;
 
         // If function finds both times (login and logout), it can calculate work hours between logs.
-        if (sscanf(_oneLine, "%lu; %lu;", &_login, &_logout) == 2)
+        if (sscanf(_oneLine, "%lu,%lu", &_login, &_logout) == 2)
         {
             // Just use times that matches start and end of the current week, ingore anything else.
             if ((_login >= _startEpoch) && (_login <= _endEpoch) && (_logout <= _endEpoch) && (_logout >= _startEpoch))

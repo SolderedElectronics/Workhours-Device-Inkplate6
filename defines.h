@@ -26,7 +26,7 @@
 #define LOGGING_ERROR_STRING "??????????"
 
 // String for the header in the RAW login and logout list
-#define LOGGING_RAW_FILE_HEADER "LOGIN EPOCH; LOGOUT EPOCH;"
+#define LOGGING_RAW_FILE_HEADER "LOGIN EPOCH, LOGOUT EPOCH"
 
 // Login / Logout error tags
 #define LOGGING_TAG_NOT_FOUND 0

@@ -59,7 +59,6 @@ void setup()
     {
         BUZZ_SYS_ERROR;
         errorDisplay();
-        display.partialUpdate(0, 1);
         while (1)
             ;
     }
@@ -97,7 +96,7 @@ void setup()
             delay(1000);
             ++cnt;
 
-            if (cnt == 25)
+            if (cnt == 50)
             {
                 display.println("Can't connect to WIFI, restart initiated.");
                 display.partialUpdate(0, 1);
@@ -275,7 +274,7 @@ void loop()
     }
 
     // Added for RTOS. Otherwise web server sometimes does not respond.
-    delay(50);
+    delay(100);
 }
 
 // Get the time from the web (time.api). If everything went ok, Inkplate RTC will be set to the correct time.
@@ -362,10 +361,9 @@ int fetchTime()
 }
 
 // Show login screen.
-void login(struct employeeData *_w)
+void login(struct employeeData *_emp)
 {
     // Code for login screen
-
     // Make a sound.
     BUZZ_LOG;
 
@@ -378,25 +376,25 @@ void login(struct employeeData *_w)
     display.setCursor(350, 30);
     display.clearDisplay();
     display.print("First name:  ");
-    display.print(_w->firstName);
+    display.print(_emp->firstName);
     display.setCursor(350, 60);
     display.print("Last name:  ");
-    display.print(_w->lastName);
+    display.print(_emp->lastName);
     display.setCursor(350, 90);
     display.print("ID:  ");
-    display.print(_w->ID);
+    display.print(_emp->ID);
     display.setCursor(350, 120);
-    display.print(_w->department);
+    display.print(_emp->department);
     display.setCursor(350, 190);
     display.print("Login");
 
     // Create path to the image on the microSD card
-    createImagePath((*_w), _imagePath);
+    createImagePath((*_emp), _imagePath);
 
     // Try to display it. If not, use default image.
-    if (!(display.drawImage(_imagePath, 5, 5, 1, 1)))
+    if (!(display.drawImage(_imagePath, 5, 5, 1, 0)))
     {
-        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 1);
+        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 0);
     }
 
     // Set variables for screen update and timeout.
@@ -405,10 +403,9 @@ void login(struct employeeData *_w)
 }
 
 // Show logout screen.
-void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
+void logout(struct employeeData *_emp, uint32_t _dailyHours, uint32_t _weekHours)
 {
     // Code for logout screen
-
     // Make a sound.
     BUZZ_LOG;
 
@@ -421,15 +418,15 @@ void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
     display.setCursor(350, 30);
     display.clearDisplay();
     display.print("Name:  ");
-    display.print(_w->firstName);
+    display.print(_emp->firstName);
     display.setCursor(350, 60);
     display.print("Last name:  ");
-    display.print(_w->lastName);
+    display.print(_emp->lastName);
     display.setCursor(350, 90);
     display.print("ID:  ");
-    display.print(_w->ID);
+    display.print(_emp->ID);
     display.setCursor(350, 120);
-    display.print(_w->department);
+    display.print(_emp->department);
     display.setCursor(350, 150);
     display.printf("Daily: %2d:%02d:%02d", _dailyHours / 3600, _dailyHours / 60 % 60, _dailyHours % 60);
     display.setCursor(350, 180);
@@ -438,12 +435,12 @@ void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
     display.print("Logout");
 
     // Create path to the image on the microSD card
-    createImagePath((*_w), _imagePath);
+    createImagePath((*_emp), _imagePath);
 
     // Try to display it. If not, use default image.
-    if (!(display.drawImage(_imagePath, 5, 5, 1, 1)))
+    if (!(display.drawImage(_imagePath, 5, 5, 1, 0)))
     {
-        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 1);
+        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 0);
     }
 
     // Set variables for screen update and timeout.
@@ -498,15 +495,14 @@ void tagLoggingError()
 // This screen will appear if the microSD card is missing while loging in or loging out.
 void errorDisplay()
 {
-    BUZZ_SYS_ERROR;
     display.setTextSize(1);
     display.setFont(&Inter16pt7b);
     display.setCursor(0, 30);
     display.clearDisplay();
     display.print("\nError occured. No SD card inserted. Please insert SD Card. If you don't have SD card, please "
                   "contact gazda.");
-    menuTimeout = millis();
-    changeNeeded = 1;
+    display.partialUpdate();
+    BUZZ_SYS_ERROR;
 }
 
 // Screen when daily report is active
@@ -775,7 +771,7 @@ void doServer(WiFiClient *client)
             sscanf(temp, "addworker/?name=%[^'&']&lname=%[^'&']&tagID=%llu&department=%[^'&']&image=%[^'&']&key=%s",
                    tempFName, tempLName, &(tempID), tempDepartment, tempImage, tempKey);
 
-        // Fix http text for all string inputs (covert HEX into ASCII, for example '# sign is in HTTp response %23 -
+        // Fix http text for all string inputs (covert HEX into ASCII, for example '# sign is in HTTP response %23 -
         // 0x23 is in ASCII '#').
         fixHTTPResponseText(tempFName);
         fixHTTPResponseText(tempLName);
@@ -839,15 +835,15 @@ void doServer(WiFiClient *client)
         client->println("        <form action=\"/addworker/\" method=\"GET\">");
         client->println("          <p>");
         client->println("            <label for=\"name\">First name</label>");
-        client->println("            <input type=\"text\" id =\"name\" name=\"name\"><br>");
+        client->println("            <input type=\"text\" id =\"name\" name=\"name\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\"><br>");
         client->println("            <label for=\"lname\">Last Name</label>");
-        client->println("            <input type=\"text\" id =\"lname\" name=\"lname\"><br>");
+        client->println("            <input type=\"text\" id =\"lname\" name=\"lname\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\"><br>");
         client->println("            <label for=\"tagID\">ID of RFID tag</label>");
         client->println("            <input type=\"number\" id =\"tagID\" name=\"tagID\"><br>");
         client->println("            <label for=\"department\">Department</label>");
-        client->println("            <input type=\"text\" id =\"department\" name=\"department\"><br>");
+        client->println("            <input type=\"text\" id =\"department\" name=\"department\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\"><br>");
         client->println("            <label for=\"image\">Image name</label>");
-        client->println("            <input type=\"text\" id =\"image\" name=\"image\"><br>");
+        client->println("            <input type=\"text\" id =\"image\" name=\"image\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\"><br>");
         client->println("            <label for=\"password\">Password</label>");
         client->println("            <input type=\"password\" id =\"key\" name=\"key\"><br>");
         client->println("            <input type =\"submit\" value =\"Add worker\">");
@@ -992,7 +988,7 @@ void doServer(WiFiClient *client)
                                 unsigned long long logoutEpoch = 0;
 
                                 // Parse one line from the file
-                                if (sscanf(oneLine, "%llu; %llu", &loginEpoch, &logoutEpoch) != 0)
+                                if (sscanf(oneLine, "%llu, %llu", &loginEpoch, &logoutEpoch) != 0)
                                 {
                                     char loginEpochStr[30];
                                     char logoutEpochStr[30];
@@ -1002,7 +998,7 @@ void doServer(WiFiClient *client)
                                     createTimeStampFromEpoch(logoutEpochStr, logoutEpoch);
 
                                     // Send one line to the client.
-                                    client->printf("%s; %s;\r\n", loginEpochStr,
+                                    client->printf("%s, %s\r\n", loginEpochStr,
                                                    logoutEpoch != 0 ? logoutEpochStr : LOGGING_ERROR_STRING);
                                 }
                             }

@@ -21,7 +21,7 @@ int widget0_r3 = (double)widget0_size / 2 * 1.0;
 char text1_content[32] = "Wednesday 22.03.2021.";
 int text1_cursor_x = 220;
 int text1_cursor_y = 550;
-const GFXfont *text1_font = &Inter16pt7b;
+const GFXfont *text1_font = &SourceSansPro_Regular16pt7b;
 
 void mainDraw()
 {

@@ -15,7 +15,7 @@ class Logging
     int fillEmployees(SdFile *_file);
     int checkFolders();
     int updateEmployeeFile();
-    uint64_t getTagID();
+    bool getTagID(HardwareSerial *_serial, uint64_t *_tagIdData);
     int addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w);
     int findLastEntry(SdFile *_f, int32_t *_epoch, uint8_t *_log);
     int32_t getEmployeeWeekHours(uint64_t _tagID, uint32_t _epoch);

@@ -1,8 +1,6 @@
 #include "Inkplate.h" //Include Inkplate library to the sketch
 #include "esp_wifi.h"
-#include "include/Inter12pt7b.h"
-#include "include/Inter16pt7b.h"
-#include "include/Inter8pt7b.h"
+#include "include/SourceSansPro_Regular16pt7b.h"
 #include "include/mainUI.h"
 #include <ArduinoJson.h>
 #include <sys\time.h>
@@ -22,7 +20,7 @@ Logging logger;
 char ssid[] = "Soldered";
 char pass[] = "dasduino";
 // Set your Static IP address
-IPAddress localIP(192, 168, 71, 99); // IP address should be set to desired address
+IPAddress localIP(192, 168, 71, 98); // IP address should be set to desired address
 // Set your Gateway IP address
 // Gateway address (in most cases it's the first address of selected IP addreess subnet)
 IPAddress gateway(192, 168, 71, 1);
@@ -49,7 +47,7 @@ void setup()
     display.setTextColor(BLACK, WHITE);
     display.display(); // Put clear image on display
     display.sdCardInit();
-    display.setFont(&Inter16pt7b);
+    display.setFont(&SourceSansPro_Regular16pt7b);
     display.setCursor(0, 30);
     display.pinModeIO(BUZZER_PIN, OUTPUT, IO_INT_ADDR);
 
@@ -130,7 +128,8 @@ void setup()
     // Be ready for the next daily report calculation
     logger.calculateNextDailyReport();
 
-    Serial.println(WiFi.localIP());
+    #warning "Remove this test code"
+    logger.createDailyReport();
 
     // Draw the main screen
     display.clearDisplay();
@@ -153,7 +152,7 @@ void loop()
     }
     else
     {
-        // If connection to Wi Fi is lost then reconnect
+        // If connection to Wi-Fi is lost then reconnect.
         WiFi.reconnect();
     }
 
@@ -161,53 +160,56 @@ void loop()
     if (Serial2.available())
     {
         // Get data from RFID reader and conver it into integer (Tag data is sent as ASCII coded numbers).
-        uint64_t tag = logger.getTagID();
-
-        // If the tag is successfully read, check if there is employee with that tag.
-        struct employeeData employee;
-        int result = logger.addLog(tag, display.rtcGetEpoch(), employee);
-
-        if (result != LOGGING_TAG_ERROR)
+        // Check if the data is vaild.
+        uint64_t tag = 0;
+        if (logger.getTagID(&Serial2, &tag))
         {
-            // If everything went ok, read the result.
-            // If it's login, show login screen with name, last name, department, tagID etc.
-            if (result == LOGGING_TAG_LOGIN)
-                login(&employee);
+            // If the tag is successfully read, check if there is employee with that tag.
+            struct employeeData employee;
+            int result = logger.addLog(tag, display.rtcGetEpoch(), employee);
 
-            // If the tag if already logged in the span of 10 minutes, just ingore it and show error message
-            if (result == LOGGING_TAG_10MIN)
-                alreadyLogged(tag);
-
-            // If it's logout, show logout screen with weekday work hours and daily work hours.
-            if (result == LOGGING_TAG_LOGOUT)
+            if (result != LOGGING_TAG_ERROR)
             {
-                logout(&employee, logger.getEmployeeDailyHours(tag, (int32_t)display.rtcGetEpoch()),
-                       logger.getEmployeeWeekHours(tag, (int32_t)display.rtcGetEpoch()));
+                // If everything went ok, read the result.
+                // If it's login, show login screen with name, last name, department, tagID etc.
+                if (result == LOGGING_TAG_LOGIN)
+                    login(&employee);
+
+                // If the tag if already logged in the span of 10 minutes, just ingore it and show error message
+                if (result == LOGGING_TAG_10MIN)
+                    alreadyLogged(tag);
+
+                // If it's logout, show logout screen with weekday work hours and daily work hours.
+                if (result == LOGGING_TAG_LOGOUT)
+                {
+                    logout(&employee, logger.getEmployeeDailyHours(tag, (int32_t)display.rtcGetEpoch()),
+                           logger.getEmployeeWeekHours(tag, (int32_t)display.rtcGetEpoch()));
+                }
+
+                // If tag is not in the list, show error message!
+                if (result == LOGGING_TAG_NOT_FOUND)
+                    unknownTag(tag);
+            }
+            else if (result == LOGGING_TAG_ERROR)
+            {
+                // Show error message
+                tagLoggingError();
             }
 
-            // If tag is not in the list, show error message!
-            if (result == LOGGING_TAG_NOT_FOUND)
-                unknownTag(tag);
-        }
-        else if (result == LOGGING_TAG_ERROR)
-        {
-            // Show error message
-            tagLoggingError();
-        }
+            // Wait until there is no more data from the Serial (from the RFID tag reader).
+            // Otherwise it can detect RFID Tag read multiple times in a row.
+            // Solution is to wait until RFID stop sending the data. And also, flush the serial buffer.
+            unsigned long rfidTimeout = millis();
 
-        // Wait until there is no more data from the Serial (from the RFID tag reader).
-        // Otherwise it can detect RFID Tag read multiple times in a row.
-        // Solution is to wait until RFID stop sending the data. And also, flush the serial buffer.
-        unsigned long rfidTimeout = millis();
-
-        while ((unsigned long)(millis() - rfidTimeout) < 500UL)
-        {
-            if (Serial2.available())
+            while ((unsigned long)(millis() - rfidTimeout) < 500UL)
             {
-                rfidTimeout = millis();
-                while (Serial2.available())
+                if (Serial2.available())
                 {
-                    Serial2.read();
+                    rfidTimeout = millis();
+                    while (Serial2.available())
+                    {
+                        Serial2.read();
+                    }
                 }
             }
         }
@@ -277,84 +279,55 @@ void loop()
     delay(100);
 }
 
-// Get the time from the web (time.api). If everything went ok, Inkplate RTC will be set to the correct time.
+// Get the time from the web (wolrdTimeApi). If everything went ok, Inkplate RTC will be set to the correct time.
 // Otherwise, funciton will return 0 and clock won't be set.
 int fetchTime()
 {
-    WiFiClientSecure client;
+    HTTPClient _http;
     DynamicJsonDocument _doc(500);
     DeserializationError _err;
     char _temp[500];
-    struct tm _t;
-    int32_t _epoch;
-    int i = 0;
-    char *_jsonStart = NULL;
 
-    client.setInsecure(); // Skip verification
-    if (client.connect("timeapi.io", 443))
+    // Try to get the JSON.
+    _http.begin("https://worldtimeapi.org/api/timezone/Europe/Zagreb");
+
+    // Send a request.
+    int _httpCode = _http.GET();
+
+    // If the result is 200 OK, read asnd parse the JSON with clock data.
+    if (_httpCode == HTTP_CODE_OK)
     {
-        client.println("GET /api/Time/current/zone?timeZone=Europe/Zagreb HTTP/1.1");
-        client.println("Host: timeapi.io");
-        client.println("Connection: close");
-        client.println();
+        // Capture the data.
+        strncpy(_temp, _http.getString().c_str(), sizeof(_temp) - 1);
 
-        // Skip header.
-        while (client.connected())
-        {
-            String line = client.readStringUntil('\n');
-            if (line == "\r")
-            {
-                break;
-            }
-        }
-
-        // Read and store everything after the header
-        int i = 0;
-        memset(_temp, 0, sizeof(_temp));
-        while (client.available())
-        {
-            _temp[i++] = client.read();
-        }
-        client.stop();
-
-        // Find the start of the JSON file
-        _jsonStart = strchr(_temp, '{');
-        if (_jsonStart == NULL)
-            return 0;
+        DEBUG_PRINT(_temp);
 
         // Deserialize the JSON file.
-        _err = deserializeJson(_doc, _jsonStart);
+        _err = deserializeJson(_doc, _temp);
 
         // Deserilization error=? Return error.
         if (_err)
-        {
             return 0;
-        }
 
-        // No entry in JSON called "seconds"? Return error.
-        if (!_doc.containsKey("seconds"))
-        {
+        // No entry in JSON called "unixtime"? Return error.
+        if (!_doc.containsKey("unixtime"))
             return 0;
-        }
 
         // Get the clock!
-        _t.tm_year = (int)_doc["year"] - 1900;
-        _t.tm_mon = (int)_doc["month"] - 1;
-        _t.tm_mday = _doc["day"];
-        _t.tm_hour = _doc["hour"];
-        _t.tm_min = _doc["minute"];
-        _t.tm_sec = _doc["seconds"];
-        _t.tm_isdst = 0;
-        _epoch = mktime(&_t);
+        int32_t _epoch = (int32_t)_doc["unixtime"];
+        int32_t _epochTimezoneOffset = (int32_t)_doc["raw_offset"];
+        int32_t _epochDstOffset = (int32_t)_doc["dst_offset"];
 
         // Set it on Inkplate RTC.
-        display.rtcSetEpoch(_epoch);
+        display.rtcSetEpoch(_epoch + _epochTimezoneOffset + _epochDstOffset);
         display.rtcGetRtcData();
         return 1;
     }
 
+    DEBUG_PRINT("Failed to get the time");
+
     // Stop the client (just in case).
-    client.stop();
+    _http.end();
 
     // If you got this far, that means something is wrong. Return error.
     return 0;
@@ -372,7 +345,7 @@ void login(struct employeeData *_emp)
 
     // Write the data on the display.
     display.setTextSize(1);
-    display.setFont(&Inter16pt7b);
+    display.setFont(&SourceSansPro_Regular16pt7b);
     display.setCursor(350, 30);
     display.clearDisplay();
     display.print("First name:  ");
@@ -414,7 +387,7 @@ void logout(struct employeeData *_emp, uint32_t _dailyHours, uint32_t _weekHours
 
     // Write the data on the display.
     display.setTextSize(1);
-    display.setFont(&Inter16pt7b);
+    display.setFont(&SourceSansPro_Regular16pt7b);
     display.setCursor(350, 30);
     display.clearDisplay();
     display.print("Name:  ");
@@ -454,7 +427,7 @@ void alreadyLogged(uint64_t _tag)
     BUZZ_LOG_ERROR;
     display.clearDisplay();
     display.setTextSize(3);
-    display.setFont(&Inter16pt7b);
+    display.setFont(&SourceSansPro_Regular16pt7b);
     display.setCursor(280, 100);
     display.print("No can't do");
     display.setTextSize(1);
@@ -470,7 +443,7 @@ void unknownTag(unsigned long long _tagID)
     BUZZ_LOG_ERROR;
     display.clearDisplay();
     display.setTextSize(1);
-    display.setFont(&Inter16pt7b);
+    display.setFont(&SourceSansPro_Regular16pt7b);
     display.setCursor(50, 50);
     display.print("Tag ID ");
     display.print(_tagID);
@@ -485,7 +458,7 @@ void tagLoggingError()
     BUZZ_LOG_ERROR;
     display.clearDisplay();
     display.setTextSize(1);
-    display.setFont(&Inter16pt7b);
+    display.setFont(&SourceSansPro_Regular16pt7b);
     display.setCursor(50, 50);
     display.print("Logging failed! Check with the gazda for more info");
     menuTimeout = millis();
@@ -496,7 +469,7 @@ void tagLoggingError()
 void errorDisplay()
 {
     display.setTextSize(1);
-    display.setFont(&Inter16pt7b);
+    display.setFont(&SourceSansPro_Regular16pt7b);
     display.setCursor(0, 30);
     display.clearDisplay();
     display.print("\nError occured. No SD card inserted. Please insert SD Card. If you don't have SD card, please "
@@ -509,7 +482,7 @@ void errorDisplay()
 void dailyReportScreen()
 {
     display.setTextSize(1);
-    display.setFont(&Inter16pt7b);
+    display.setFont(&SourceSansPro_Regular16pt7b);
     display.setCursor(0, 30);
     display.clearDisplay();
     display.print("Creating daily report, please wait!");
@@ -779,10 +752,6 @@ void doServer(WiFiClient *client)
         fixHTTPResponseText(tempImage);
         fixHTTPResponseText(tempKey);
 
-        Serial.println(temp);
-        Serial.printf("Add worker: Name: %s Last name: %s ID; %llu Depart: %s Image: %s\r\n", tempFName, tempLName,
-                      tempID, tempDepartment, tempImage);
-
         // If the data is ok and key is vaild, add the employee.
         if (_res == 6 && strstr(tempKey, SECRET_KEY) != NULL)
         {
@@ -988,7 +957,7 @@ void doServer(WiFiClient *client)
                                 unsigned long long logoutEpoch = 0;
 
                                 // Parse one line from the file
-                                if (sscanf(oneLine, "%llu, %llu", &loginEpoch, &logoutEpoch) != 0)
+                                if (sscanf(oneLine, "%llu,%llu", &loginEpoch, &logoutEpoch) != 0)
                                 {
                                     char loginEpochStr[30];
                                     char logoutEpochStr[30];
@@ -998,7 +967,7 @@ void doServer(WiFiClient *client)
                                     createTimeStampFromEpoch(logoutEpochStr, logoutEpoch);
 
                                     // Send one line to the client.
-                                    client->printf("%s, %s\r\n", loginEpochStr,
+                                    client->printf("%s,%s\r\n", loginEpochStr,
                                                    logoutEpoch != 0 ? logoutEpochStr : LOGGING_ERROR_STRING);
                                 }
                             }
@@ -1318,106 +1287,98 @@ void doServer(WiFiClient *client)
     }
     else if (strstr(buffer, "/api"))
     {
-        // API link is [PI Address]/api/getWeekHours/[TAGID]
+        // API link is [IP Address]/api/getWeekHours/[TAGID]
         // Send response (200 OK)
         client->println("HTTP/1.1 200 OK");
-        client->println("Content-type:text/plain");
+        client->println("Content-type: application/json");
         client->println("Connection: close");
         client->println();
 
         // This is block of code for the API interface
-        // Check what kind of data is needed (added for future add-ons)
-        if (strstr(buffer, "/getWeekHours"))
+        // Check what kind of data is needed (added for future add-ons).
+
+        // Get the start of the HTTP GET Request for the Weekly work hours.
+        char *startStr = strstr(buffer, "/getweekhours");
+        if (startStr != NULL)
         {
-            // Get the start of the HTTP GET Request
-            char *startStr = strstr(buffer, "/getWeekHours");
-
             // If the start is found, get the TAG ID
-            if (startStr != NULL)
+            unsigned long long tagID;
+
+            if (sscanf(startStr, "/getweekhours/%llu", &tagID) == 1)
             {
-                unsigned long long tagID;
+                // Get employee data by the TAG ID
+                struct employeeData *employee;
+                employee = myList.getEmployeeByID(tagID);
 
-                if (sscanf(startStr, "/getWeekHours/%llu", &tagID) == 1)
+                if (employee != NULL)
                 {
-                    // Get employee data by the TAG ID
-                    struct employeeData *employee;
-                    employee = myList.getEmployeeByID(tagID);
+                    int32_t weekHours = 0;
+                    int32_t dayHours = 0;
+                    int32_t lastLogin = 0;
+                    int32_t lastLogout = 0;
+                    int32_t lastLoginInList = 0;
+                    int32_t lastLogoutInList = 0;
 
-                    if (employee != NULL)
+                    // Arrays for timestamp
+                    char loginTimestampStr[30];
+                    char logoutTimestampStr[30];
+
+                    // Get weekly working hours
+
+                    // First update the RTC
+                    display.rtcGetRtcData();
+
+                    // Get employee workhours (search employee by ID).
+                    weekHours = logger.getEmployeeWeekHours(tagID, display.rtcGetEpoch());
+                    dayHours = logger.getEmployeeDailyHours(tagID, display.rtcGetEpoch(), &lastLogin, &lastLogout);
+
+                    // Get the last log data (to check if the logout is done)
+                    if (logger.findLastLog(employee, &lastLoginInList, &lastLogoutInList))
                     {
-                        int32_t weekHours = 0;
-                        int32_t dayHours = 0;
-                        int32_t lastLogin = 0;
-                        int32_t lastLogout = 0;
-                        int32_t lastLoginInList = 0;
-                        int32_t lastLogoutInList = 0;
-
-                        // Arrays for timestamp
-                        char loginTimestampStr[30];
-                        char logoutTimestampStr[30];
-
-                        // Get weekly working hours
-
-                        // First update the RTC
-                        display.rtcGetRtcData();
-
-                        // Get employee workhours (search employee by ID).
-                        weekHours = logger.getEmployeeWeekHours(tagID, display.rtcGetEpoch());
-                        dayHours = logger.getEmployeeDailyHours(tagID, display.rtcGetEpoch(), &lastLogin, &lastLogout);
-
-                        // Get the last log data (to check if the logout is done)
-                        if (logger.findLastLog(employee, &lastLoginInList, &lastLogoutInList))
+                        // Send data to the client. Note that is different calculation if logout is done.
+                        if (lastLogoutInList == 0 && lastLoginInList != 0)
                         {
-                            // Send data to the client. Note that is different calculation if logout is done.
-                            if (lastLogoutInList == 0 && lastLoginInList != 0)
-                            {
-                                // Add current time to the dayhours and weekhours (because logout is not done yet)
-                                dayHours += ((int32_t)(display.rtcGetEpoch()) - lastLoginInList);
-                                weekHours += ((int32_t)(display.rtcGetEpoch()) - lastLoginInList);
+                            // Add current time to the dayhours and weekhours (because logout is not done yet)
+                            dayHours += ((int32_t)(display.rtcGetEpoch()) - lastLoginInList);
+                            weekHours += ((int32_t)(display.rtcGetEpoch()) - lastLoginInList);
 
-                                // Make string timestamp
-                                createTimeStampFromEpoch(loginTimestampStr, lastLogin);
+                            // Make string timestamp
+                            createTimeStampFromEpoch(loginTimestampStr, lastLogin);
 
-                                // Send the data to the client
-                                client->printf("Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: "
-                                               "%s\r\nLogout: Not Done Yet\r\n",
-                                               dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600,
-                                               weekHours / 60 % 60, weekHours % 60, loginTimestampStr);
-                            }
-                            else
-                            {
-                                // Make string timestamp
-                                createTimeStampFromEpoch(loginTimestampStr, lastLogin);
-                                createTimeStampFromEpoch(logoutTimestampStr, lastLogout);
-                                client->printf(
-                                    "Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: %s\r\nLogout: %s\r",
-                                    dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600,
-                                    weekHours / 60 % 60, weekHours % 60, lastLogin != -1 ? loginTimestampStr : "----",
-                                    lastLogout != -1 ? logoutTimestampStr : "----");
-                            }
+                            // Send the data to the client
+                            client->printf("Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: "
+                                            "%s\r\nLogout: Not Done Yet\r\n",
+                                            dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600,
+                                            weekHours / 60 % 60, weekHours % 60, loginTimestampStr);
                         }
                         else
                         {
-                            // Send error if microSD card can't be found.
-                            client->println("microSD Card access error!");
+                            // Make string timestamp
+                            createTimeStampFromEpoch(loginTimestampStr, lastLogin);
+                            createTimeStampFromEpoch(logoutTimestampStr, lastLogout);
+                            client->printf(
+                                "Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: %s\r\nLogout: %s\r",
+                                dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600,
+                                weekHours / 60 % 60, weekHours % 60, lastLogin != -1 ? loginTimestampStr : "----",
+                                lastLogout != -1 ? logoutTimestampStr : "----");
                         }
                     }
                     else
                     {
-                        // Send error if the wrong ID is sent.
-                        client->println("Wrong API ID!");
+                        // Send error if microSD card can't be found.
+                        client->println("microSD Card access error!");
                     }
                 }
                 else
                 {
-                    // Send error message for the wrong API parameter
-                    client->println("Wrong API parameter!");
+                    // Send error if the wrong ID is sent.
+                    client->println("Wrong API ID!");
                 }
             }
             else
             {
-                // Send error message for the wrong API request
-                client->println("Wrong API request!");
+                // Send error message for the wrong API parameter
+                client->println("Wrong API parameter!");
             }
         }
         else

@@ -26,7 +26,7 @@
 #define LOGGING_ERROR_STRING "??????????"
 
 // String for the header in the RAW login and logout list
-#define LOGGING_RAW_FILE_HEADER "LOGIN EPOCH, LOGOUT EPOCH"
+#define LOGGING_RAW_FILE_HEADER "LOGIN EPOCH,LOGOUT EPOCH"
 
 // Login / Logout error tags
 #define LOGGING_TAG_NOT_FOUND 0
@@ -68,5 +68,7 @@ struct employeeData
     uint64_t ID;
     struct employeeData *next;
 };
+
+#define DEBUG_PRINT(...) { Serial.printf("[DEBUG from %s()]", __func__); Serial.printf(__VA_ARGS__); Serial.println(); }
 
 #endif

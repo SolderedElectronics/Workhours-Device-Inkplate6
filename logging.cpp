@@ -21,7 +21,6 @@ int Logging::begin(SdFat *_s, LinkedList *_l, Inkplate *_i)
     // Init uSD card
     if (!_sd->begin(15, SD_SCK_MHZ(10)))
     {
-        // Serial.println("Failed to init uSD");
         return 0;
     }
 
@@ -31,7 +30,6 @@ int Logging::begin(SdFat *_s, LinkedList *_l, Inkplate *_i)
         if (!_sd->mkdir(DEFAULT_FOLDER_NAME))
         {
             // Ooops, something went wrong... uSD card is full, or it's corrupted.
-            // Serial.println("Failed to make a folder");
             return 0;
         }
     }
@@ -39,31 +37,13 @@ int Logging::begin(SdFat *_s, LinkedList *_l, Inkplate *_i)
     // Now change to default directory / folder for this device. If you can't, card is corrupted.
     if (!_sd->chdir(DEFAULT_FOLDER_NAME))
     {
-        // Serial.println("Change dir failed");
         return 0;
     }
 
-    // Try to open file with employee list.
-    // If the file does not exists, make it!
-    // if (!_file.exists("/workers.csv"))
-    //{
-    //    Serial.println("File doesn't exist");
-    //    if (!_file.open("workers.csv", O_CREAT))
-    //    {
-    //        // This should not never happen
-    //        Serial.println("Failed to make workers.csv");
-    //        return 0;
-    //    }
-    //    Serial.println("File created");
-    //    _file.close();
-    //}
-    // else
-    //{
-    //    // Open a file with all employees.
+    // Open a file with all employees.
     if (!_file.open("workers.csv", FILE_READ))
     {
         // Again, this should never happen!
-        // Serial.println("Failed to open workers.csv");
         return 0;
     }
 
@@ -72,7 +52,6 @@ int Logging::begin(SdFat *_s, LinkedList *_l, Inkplate *_i)
 
     // Close the file.
     _file.close();
-    //}
 
     // Check for employee folders
     checkFolders();
@@ -235,7 +214,6 @@ int Logging::updateEmployeeFile()
     if (!sd.begin(15, SD_SCK_MHZ(10)))
     {
         // Init has failed. Wrong connections, bad uSD card, wrong speed, wrong format?
-        // Serial.println("Failed to init uSD");
         return 0;
     }
 
@@ -295,10 +273,14 @@ int Logging::updateEmployeeFile()
     return 1;
 }
 
-uint64_t Logging::getTagID()
+bool Logging::getTagID(HardwareSerial *_serial, uint64_t *_tagIdData)
 {
     // Try to parse tag ID. It is sent from Serial using ASCII code (decimal value). It needs to be converted int 64 bit
-    // integer.
+    // integer. Return true if is valid TagID, return false otherwise.
+    bool _retValue = false;
+
+    // Set default ID value for TagID to zero.
+    *_tagIdData = 0;
 
     // Variable for serial timeout. The idea is to wait max 10ms from last received char from Serial.
     unsigned long _timer1 = millis();
@@ -308,44 +290,41 @@ uint64_t Logging::getTagID()
 
     // Array for storing chars from serial. Tags have max 10 digits + enter (LF, CR) and one more for '\0' = 13
     // elements.
-    char _buffer[40];
+    char _buffer[33];
 
     // Variable for storing one char from serial.
     char _c = 0;
 
-    // Variable for RFID Tag.
-    unsigned long long _tag = 0;
-
     // Set whole buffer to 0.
     memset(_buffer, 0, sizeof(_buffer));
 
-    // Try to catch all datra from RFID reader. Wait for timeout to occur or more than 10 chars have been received or
-    // cacth new line. New line means successful
-    while (((unsigned long)(millis() - _timer1) < 10) && (_n < 38))
+    // Try to catch all datra from RFID reader.
+    while (((unsigned long)(millis() - _timer1) < 100))
     {
-        if (Serial2.available())
+        if (_serial->available())
         {
-            _c = Serial2.read();
-            if (_n < 38) _buffer[_n++] = _c;
+            _c = _serial->read();
+            if (_n < 31) _buffer[_n++] = _c;
             _timer1 = millis();
         }
     }
 
-    // If more than 32 chars have been received, something is not right...
-    if (_n >= 32)
-        return 0;
-
-    // Last char is new line? Nice! All data from RFID reader have been successfully stored.
-    if (_c == '\n')
+    // Try to catch start of the RFID.
+    char* _rfidResponseStart = strchr(_buffer, '$');
+    if (_rfidResponseStart != NULL)
     {
         // Add string terminating char at the end of the buffer.
         _buffer[_n] = 0;
 
         // Convert string to integer.
-        sscanf(_buffer, "$%llu&", &_tag);
+        sscanf(_rfidResponseStart, "$%llu&", _tagIdData);
+
+        // If the data is vaild, return true.
+        if (*_tagIdData != 0) _retValue = true;
     }
 
-    return _tag;
+    // Return true for vaild TagID, otherwise return false.
+    return _retValue;
 }
 
 int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
@@ -430,6 +409,8 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
                 int32_t _dayEndEpoch;
                 calculateDayEpoch(_epoch, &_dayStartEpoch, &_dayEndEpoch);
 
+                DEBUG_PRINT("Epoch: %ld, Start: %ld, End: %ld", _epoch, _dayStartEpoch, _dayEndEpoch);
+
                 if ((_lastLogEpoch < _dayStartEpoch) && (_lastLogEpoch < _dayEndEpoch) && (_lastLogEpoch != 0) &&
                     (_logInOutTag == LOGGING_TAG_LOGOUT))
                 {
@@ -448,13 +429,16 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
                 // If it's a logout tag, send a new line at the end of the string (log time), otherwise don't.
                 if (_logInOutTag == LOGGING_TAG_LOGOUT)
                 {
-                    myFile.print(oneLine);
-                    myFile.println(' ');
+                    myFile.println(oneLine);
+
+                    DEBUG_PRINT("Logout detected");
                 }
                 else
                 {
                     myFile.print(oneLine);
-                    myFile.print(', ');
+                    myFile.print(',');
+
+                    DEBUG_PRINT("Login detected");
                 }
 
                 // Close the file (send data to the uSD card).
@@ -541,6 +525,8 @@ int Logging::findLastEntry(SdFile *_f, int32_t *_epoch, uint8_t *_log)
     // Try to parse line before the last line in the file.
     _resultPrev = sscanf(_prevLine, "%llu,%llu", &_time1, &_time2);
 
+    DEBUG_PRINT("_resultPrev: %d", _resultPrev);
+
     // If line cannot be parsed, that means it's the header of the file (so this is the first line with acctual data)
     if (_resultPrev == 0)
     {
@@ -576,6 +562,7 @@ int Logging::findLastEntry(SdFile *_f, int32_t *_epoch, uint8_t *_log)
 
     // Try to parse current line and see what you got.
     _resultCurrent = sscanf(_currentLine, "%llu,%llu", &_time3, &_time4);
+    DEBUG_PRINT("_resultCurrent: %d", _resultCurrent);
 
     if (_resultCurrent == 0)
     {
@@ -886,7 +873,7 @@ int Logging::createDailyReport()
 
     for (int i = 0; i < _n; i++)
     {
-        // Get the employee data
+        // Get the employee data.
         struct employeeData *_e = _link->getEmployee(i);
 
         int32_t _firstLoginEpoch = 0;
@@ -897,11 +884,12 @@ int Logging::createDailyReport()
         char _timestampLoginStr[30];
         char _timestampLogoutStr[30];
 
-        // Get working hours data from the specific employee
+        // Get working hours data from the specific employee for this specific time.
         _workHours =
             getEmployeeDailyHours(_e->ID, _dailyReportEpoch, &_firstLoginEpoch, &_lastLogoutEpoch, &_missedLogout);
 
-        if (_workHours != 0 && (_firstLoginEpoch != -1 || _firstLoginEpoch != 0))
+        // Check if the data for this employee is avaialbe. If not, ignore it.
+        if (_workHours > 0 && (_firstLoginEpoch != -1 || _firstLoginEpoch != 0))
         {
             // Create timestamp strings for login and logout times
             createTimeStampFromEpoch(_timestampLoginStr, _firstLoginEpoch);
@@ -1061,7 +1049,6 @@ int Logging::getWorkHours(SdFile *_f, int32_t _startEpoch, int32_t _endEpoch, in
             {
                 *_loggedTime += (_logout - _login);
             }
-            Serial.println();
         }
     }
 

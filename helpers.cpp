@@ -275,14 +275,9 @@ void removeEmployeeData(SdFat *_sd, employeeData *_employee)
     snprintf(_folderName, sizeof(_folderName), "%s%s%llu", _employee->firstName, _employee->lastName,
              (unsigned long long)(_employee->ID));
 
-    Serial.print(_folderName);
-
     // Remove the folder
     _myFile.open(_folderName);
-    if (!_myFile.rmRfStar())
-    {
-        Serial.println("Could not remove the folder!");
-    }
+    _myFile.rmRfStar();
 
     // Close the file.
     _myFile.close();

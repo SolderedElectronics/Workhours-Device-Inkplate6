@@ -1,5 +1,10 @@
 #include "logging.h"
 
+#include "Inkplate.h"
+#include "defines.h"
+#include "helpers.h"
+#include "linkedList.h"
+
 // Constructor. Empty...for now.
 Logging::Logging()
 {
@@ -409,8 +414,6 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
                 int32_t _dayEndEpoch;
                 calculateDayEpoch(_epoch, &_dayStartEpoch, &_dayEndEpoch);
 
-                DEBUG_PRINT("Epoch: %ld, Start: %ld, End: %ld", _epoch, _dayStartEpoch, _dayEndEpoch);
-
                 if ((_lastLogEpoch < _dayStartEpoch) && (_lastLogEpoch < _dayEndEpoch) && (_lastLogEpoch != 0) &&
                     (_logInOutTag == LOGGING_TAG_LOGOUT))
                 {
@@ -430,15 +433,11 @@ int Logging::addLog(uint64_t _tagID, uint32_t _epoch, struct employeeData &_w)
                 if (_logInOutTag == LOGGING_TAG_LOGOUT)
                 {
                     myFile.println(oneLine);
-
-                    DEBUG_PRINT("Logout detected");
                 }
                 else
                 {
                     myFile.print(oneLine);
                     myFile.print(',');
-
-                    DEBUG_PRINT("Login detected");
                 }
 
                 // Close the file (send data to the uSD card).
@@ -525,8 +524,6 @@ int Logging::findLastEntry(SdFile *_f, int32_t *_epoch, uint8_t *_log)
     // Try to parse line before the last line in the file.
     _resultPrev = sscanf(_prevLine, "%llu,%llu", &_time1, &_time2);
 
-    DEBUG_PRINT("_resultPrev: %d", _resultPrev);
-
     // If line cannot be parsed, that means it's the header of the file (so this is the first line with acctual data)
     if (_resultPrev == 0)
     {
@@ -562,7 +559,6 @@ int Logging::findLastEntry(SdFile *_f, int32_t *_epoch, uint8_t *_log)
 
     // Try to parse current line and see what you got.
     _resultCurrent = sscanf(_currentLine, "%llu,%llu", &_time3, &_time4);
-    DEBUG_PRINT("_resultCurrent: %d", _resultCurrent);
 
     if (_resultCurrent == 0)
     {

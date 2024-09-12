@@ -1,10 +1,13 @@
 #ifndef __LOGGING_H__
 #define __LOGGING_H__
 
-#include "Inkplate.h"
-#include "defines.h"
-#include "helpers.h"
-#include "linkedList.h"
+// Include main Arduino Header file.
+#include <Arduino.h>
+
+class SdFat;
+class LinkedList;
+class Inkplate;
+class SdFile;
 
 class Logging
 {

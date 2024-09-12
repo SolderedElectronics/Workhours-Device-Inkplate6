@@ -1,7 +1,10 @@
-#include "Arduino.h"
-#include "Inkplate.h"
+//#include "Arduino.h"
+//#include "Inkplate.h"
+//#include "icons.h"
+//#include "../helpers.h"
+#include "../gui.h"
+#include "../system.h"
 #include "icons.h"
-#include "../helpers.h"
 
 extern Inkplate display;
 
@@ -18,10 +21,9 @@ int widget0_r1 = (double)widget0_size / 2 * 0.65;
 int widget0_r2 = (double)widget0_size / 2 * 0.9;
 int widget0_r3 = (double)widget0_size / 2 * 1.0;
 
-char text1_content[32] = "Wednesday 22.03.2021.";
+char text1_content[32] = "--[DOW]-- --.--.----.";
 int text1_cursor_x = 220;
 int text1_cursor_y = 550;
-const GFXfont *text1_font = &SourceSansPro_Regular16pt7b;
 
 void mainDraw()
 {
@@ -51,7 +53,7 @@ void mainDraw()
        widget0_center_x + widget0_r2 * cos((double)(widget0_m - 15.0) / 60.0 * 2.0 * 3.14159265),
        widget0_center_y + widget0_r2 * sin((double)(widget0_m - 15.0) / 60.0 * 2.0 * 3.14159265), 2, 2);
 
-    display.setFont(text1_font);
+    display.setFont(&SourceSansPro_Regular16pt7b);
     display.setTextColor(BLACK, WHITE);
     display.setTextSize(1);    
     display.setCursor(text1_cursor_x, text1_cursor_y);

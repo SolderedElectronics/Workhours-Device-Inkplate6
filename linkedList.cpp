@@ -1,4 +1,6 @@
 #include "linkedList.h"
+#include "defines.h"
+
 LinkedList::LinkedList()
 {
 }

@@ -1,15 +1,13 @@
-#include "Inkplate.h" //Include Inkplate library to the sketch
-#include "esp_wifi.h"
-#include "include/SourceSansPro_Regular16pt7b.h"
-#include "include/mainUI.h"
-#include <ArduinoJson.h>
-#include <sys\time.h>
-#include <time.h>
-
-#include "defines.h"
-#include "helpers.h"
+#include "system.h"
+#include "Inkplate.h"
 #include "linkedList.h"
 #include "logging.h"
+#include "include/SourceSansPro_Regular16pt7b.h"
+#include "helpers.h"
+#include "system.h"
+#include "gui.h"
+#include "defines.h"
+#include "include/mainUI.h"
 
 Inkplate display(INKPLATE_1BIT); // Create an object on Inkplate library and also set library into 1 Bit mode (BW)
 WiFiServer server(80);
@@ -40,96 +38,24 @@ unsigned long rtcUpdate = 0;
 
 void setup()
 {
-    Serial.begin(115200);
-    Serial2.begin(57600, SERIAL_8N1, 39, -1); // Software Serial for RFID
-    display.begin();                          // Init Inkplate library (you should call this function ONLY ONCE)
-    display.clearDisplay();                   // Clear frame buffer of display
+    // Init Inkplate library (you should call this function ONLY ONCE)
+    display.begin();
+
+    // Clear frame buffer of display
+    display.clearDisplay();
+
+    // Text settings.
     display.setTextColor(BLACK, WHITE);
     display.display(); // Put clear image on display
     display.sdCardInit();
     display.setFont(&SourceSansPro_Regular16pt7b);
     display.setCursor(0, 30);
-    display.pinModeIO(BUZZER_PIN, OUTPUT, IO_INT_ADDR);
 
-    display.print("Checking microSD Card");
-    display.partialUpdate(0, 1);
-    if (!sd.begin(15, SD_SCK_MHZ(10)))
-    {
-        BUZZ_SYS_ERROR;
-        errorDisplay();
-        while (1)
-            ;
-    }
-
-    display.print("\nConfiguring IP Adresses");
-    display.partialUpdate(0, 0);
-
-    // High current consumption due WiFi and epaper activity causes reset of the ESP32. So wait a little bit.
-    delay(1000);
-
-    // Confingure IP Adress, subnet, DNS.
-    if (!WiFi.config(localIP, gateway, subnet, primaryDNS, secondaryDNS))
-    {
-        display.println("\nSTA Failed to configure, please reset Inkplate! If error keeps to repeat, try to cnofigure "
-                        "STA in different way or use another IP address");
-    }
-
-    WiFi.mode(WIFI_STA);
-    esp_wifi_set_ps(WIFI_PS_NONE);
-    WiFi.begin(ssid, pass);
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        WiFi.reconnect();
-
-        delay(5000);
-
-        int cnt = 0;
-        display.print("\nWaiting for WiFi to connect");
-        display.partialUpdate(0, 1);
-        while ((WiFi.status() != WL_CONNECTED))
-        {
-            // Prints a dot every second that wifi isn't connected
-            display.print(F("."));
-            display.partialUpdate(0, 1);
-            delay(1000);
-            ++cnt;
-
-            if (cnt == 50)
-            {
-                display.println("Can't connect to WIFI, restart initiated.");
-                display.partialUpdate(0, 1);
-                delay(100);
-                ESP.restart();
-            }
-        }
-    }
-
-    // Start server
-    display.print("\nStarting the web server");
-    display.partialUpdate();
-    server.begin();
-    display.print("\nGetting the time from timeAPI...");
-    display.partialUpdate();
-    if (!fetchTime())
-    {
-        display.print("Failed! Please reset the device.");
-        display.partialUpdate();
-        BUZZ_SYS_ERROR;
-        while (true)
-            ;
-    }
-
-    // Initialize library for logging functions. Send address of the SdFat object and Linked List object as parameters
-    // (needed by the library).
-    display.print("\nReading data from SD card");
-    display.partialUpdate();
-    logger.begin(&sd, &myList, &display);
+    // Initialize the device system.
+    deviceInit(&display, ssid, pass, &server, &myList, &logger, localIP, gateway, subnet, primaryDNS, secondaryDNS);
 
     // Be ready for the next daily report calculation
     logger.calculateNextDailyReport();
-
-    #warning "Remove this test code"
-    logger.createDailyReport();
 
     // Draw the main screen
     display.clearDisplay();
@@ -173,27 +99,27 @@ void loop()
                 // If everything went ok, read the result.
                 // If it's login, show login screen with name, last name, department, tagID etc.
                 if (result == LOGGING_TAG_LOGIN)
-                    login(&employee);
+                    login(&display, &employee, &changeNeeded, &menuTimeout);
 
                 // If the tag if already logged in the span of 10 minutes, just ingore it and show error message
                 if (result == LOGGING_TAG_10MIN)
-                    alreadyLogged(tag);
+                    alreadyLogged(&display, tag, &changeNeeded, &menuTimeout);
 
                 // If it's logout, show logout screen with weekday work hours and daily work hours.
                 if (result == LOGGING_TAG_LOGOUT)
                 {
-                    logout(&employee, logger.getEmployeeDailyHours(tag, (int32_t)display.rtcGetEpoch()),
-                           logger.getEmployeeWeekHours(tag, (int32_t)display.rtcGetEpoch()));
+                    logout(&display, &employee, logger.getEmployeeDailyHours(tag, (int32_t)display.rtcGetEpoch()),
+                           logger.getEmployeeWeekHours(tag, (int32_t)display.rtcGetEpoch()), &changeNeeded, &menuTimeout);
                 }
 
                 // If tag is not in the list, show error message!
                 if (result == LOGGING_TAG_NOT_FOUND)
-                    unknownTag(tag);
+                    unknownTag(&display, tag, &changeNeeded, &menuTimeout);
             }
             else if (result == LOGGING_TAG_ERROR)
             {
                 // Show error message
-                tagLoggingError();
+                tagLoggingError(&display, &changeNeeded, &menuTimeout);
             }
 
             // Wait until there is no more data from the Serial (from the RFID tag reader).
@@ -259,7 +185,7 @@ void loop()
     if (logger.isDailyReport())
     {
         // Show the screen
-        dailyReportScreen();
+        dailyReportScreen(&display, &changeNeeded, &menuTimeout);
         display.display();
 
         // Make a daily report for all employees
@@ -269,7 +195,7 @@ void loop()
         logger.calculateNextDailyReport();
 
         // Update the time.
-        fetchTime();
+        fetchTime(&display);
 
         // Wait for 10 seconds (daily report is activated 10 seconds before midnight).
         delay(10000);
@@ -277,234 +203,6 @@ void loop()
 
     // Added for RTOS. Otherwise web server sometimes does not respond.
     delay(100);
-}
-
-// Get the time from the web (wolrdTimeApi). If everything went ok, Inkplate RTC will be set to the correct time.
-// Otherwise, funciton will return 0 and clock won't be set.
-int fetchTime()
-{
-    HTTPClient _http;
-    DynamicJsonDocument _doc(500);
-    DeserializationError _err;
-    char _temp[500];
-
-    // Try to get the JSON.
-    _http.begin("https://worldtimeapi.org/api/timezone/Europe/Zagreb");
-
-    // Send a request.
-    int _httpCode = _http.GET();
-
-    // If the result is 200 OK, read asnd parse the JSON with clock data.
-    if (_httpCode == HTTP_CODE_OK)
-    {
-        // Capture the data.
-        strncpy(_temp, _http.getString().c_str(), sizeof(_temp) - 1);
-
-        DEBUG_PRINT(_temp);
-
-        // Deserialize the JSON file.
-        _err = deserializeJson(_doc, _temp);
-
-        // Deserilization error=? Return error.
-        if (_err)
-            return 0;
-
-        // No entry in JSON called "unixtime"? Return error.
-        if (!_doc.containsKey("unixtime"))
-            return 0;
-
-        // Get the clock!
-        int32_t _epoch = (int32_t)_doc["unixtime"];
-        int32_t _epochTimezoneOffset = (int32_t)_doc["raw_offset"];
-        int32_t _epochDstOffset = (int32_t)_doc["dst_offset"];
-
-        // Set it on Inkplate RTC.
-        display.rtcSetEpoch(_epoch + _epochTimezoneOffset + _epochDstOffset);
-        display.rtcGetRtcData();
-        return 1;
-    }
-
-    DEBUG_PRINT("Failed to get the time");
-
-    // Stop the client (just in case).
-    _http.end();
-
-    // If you got this far, that means something is wrong. Return error.
-    return 0;
-}
-
-// Show login screen.
-void login(struct employeeData *_emp)
-{
-    // Code for login screen
-    // Make a sound.
-    BUZZ_LOG;
-
-    // Array for the image path on the microSD card.
-    char _imagePath[200];
-
-    // Write the data on the display.
-    display.setTextSize(1);
-    display.setFont(&SourceSansPro_Regular16pt7b);
-    display.setCursor(350, 30);
-    display.clearDisplay();
-    display.print("First name:  ");
-    display.print(_emp->firstName);
-    display.setCursor(350, 60);
-    display.print("Last name:  ");
-    display.print(_emp->lastName);
-    display.setCursor(350, 90);
-    display.print("ID:  ");
-    display.print(_emp->ID);
-    display.setCursor(350, 120);
-    display.print(_emp->department);
-    display.setCursor(350, 190);
-    display.print("Login");
-
-    // Create path to the image on the microSD card
-    createImagePath((*_emp), _imagePath);
-
-    // Try to display it. If not, use default image.
-    if (!(display.drawImage(_imagePath, 5, 5, 1, 0)))
-    {
-        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 0);
-    }
-
-    // Set variables for screen update and timeout.
-    menuTimeout = millis();
-    changeNeeded = 1;
-}
-
-// Show logout screen.
-void logout(struct employeeData *_emp, uint32_t _dailyHours, uint32_t _weekHours)
-{
-    // Code for logout screen
-    // Make a sound.
-    BUZZ_LOG;
-
-    // Array for the image path on the microSD card.
-    char _imagePath[200];
-
-    // Write the data on the display.
-    display.setTextSize(1);
-    display.setFont(&SourceSansPro_Regular16pt7b);
-    display.setCursor(350, 30);
-    display.clearDisplay();
-    display.print("Name:  ");
-    display.print(_emp->firstName);
-    display.setCursor(350, 60);
-    display.print("Last name:  ");
-    display.print(_emp->lastName);
-    display.setCursor(350, 90);
-    display.print("ID:  ");
-    display.print(_emp->ID);
-    display.setCursor(350, 120);
-    display.print(_emp->department);
-    display.setCursor(350, 150);
-    display.printf("Daily: %2d:%02d:%02d", _dailyHours / 3600, _dailyHours / 60 % 60, _dailyHours % 60);
-    display.setCursor(350, 180);
-    display.printf("Weekly: %2d:%02d:%02d", _weekHours / 3600, _weekHours / 60 % 60, _weekHours % 60);
-    display.setCursor(350, 250);
-    display.print("Logout");
-
-    // Create path to the image on the microSD card
-    createImagePath((*_emp), _imagePath);
-
-    // Try to display it. If not, use default image.
-    if (!(display.drawImage(_imagePath, 5, 5, 1, 0)))
-    {
-        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 0);
-    }
-
-    // Set variables for screen update and timeout.
-    menuTimeout = millis();
-    changeNeeded = 1;
-}
-
-// Show the screen if some one is already logged.
-void alreadyLogged(uint64_t _tag)
-{
-    BUZZ_LOG_ERROR;
-    display.clearDisplay();
-    display.setTextSize(3);
-    display.setFont(&SourceSansPro_Regular16pt7b);
-    display.setCursor(280, 100);
-    display.print("No can't do");
-    display.setTextSize(1);
-    display.setCursor(50, 500);
-    display.print("You already scanned your tag in last 10 minutes!");
-    menuTimeout = millis();
-    changeNeeded = 1;
-}
-
-// Show error screen for unknown tag.
-void unknownTag(unsigned long long _tagID)
-{
-    BUZZ_LOG_ERROR;
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setFont(&SourceSansPro_Regular16pt7b);
-    display.setCursor(50, 50);
-    display.print("Tag ID ");
-    display.print(_tagID);
-    display.print(" is not assigned to any worker");
-    menuTimeout = millis();
-    changeNeeded = 1;
-}
-
-// Show this screen if something weird happen to the logging.
-void tagLoggingError()
-{
-    BUZZ_LOG_ERROR;
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setFont(&SourceSansPro_Regular16pt7b);
-    display.setCursor(50, 50);
-    display.print("Logging failed! Check with the gazda for more info");
-    menuTimeout = millis();
-    changeNeeded = 1;
-}
-
-// This screen will appear if the microSD card is missing while loging in or loging out.
-void errorDisplay()
-{
-    display.setTextSize(1);
-    display.setFont(&SourceSansPro_Regular16pt7b);
-    display.setCursor(0, 30);
-    display.clearDisplay();
-    display.print("\nError occured. No SD card inserted. Please insert SD Card. If you don't have SD card, please "
-                  "contact gazda.");
-    display.partialUpdate();
-    BUZZ_SYS_ERROR;
-}
-
-// Screen when daily report is active
-void dailyReportScreen()
-{
-    display.setTextSize(1);
-    display.setFont(&SourceSansPro_Regular16pt7b);
-    display.setCursor(0, 30);
-    display.clearDisplay();
-    display.print("Creating daily report, please wait!");
-    menuTimeout = millis();
-}
-
-// Funcion for making a sound. Buzzer must be connected on the IO expaned GPIO15 pin with the MOSFET)
-// Do not connect buzzer directly to the IO expander!
-void buzzer(uint8_t n, int _ms)
-{
-    for (int i = 0; i < n; i++)
-    {
-        unsigned long _timer1 = millis();
-        while ((unsigned long)(millis() - _timer1) < _ms)
-        {
-            display.digitalWriteIO(BUZZER_PIN, HIGH, IO_INT_ADDR);
-            display.digitalWriteIO(BUZZER_PIN, LOW, IO_INT_ADDR);
-        }
-        _timer1 = millis();
-        while ((unsigned long)(millis() - _timer1) < _ms)
-            ;
-    }
 }
 
 // Function that handles all requests for the client.
@@ -716,10 +414,10 @@ void doServer(WiFiClient *client)
         client->println("Connection: close");
         client->println();
         unsigned long long tempID = 0;
-        char tempFName[50];
-        char tempLName[50];
-        char tempImage[128];
-        char tempDepartment[100];
+        char tempFName[101];
+        char tempLName[101];
+        char tempImage[129];
+        char tempDepartment[101];
         char tempKey[51];
         char *temp = strstr(buffer, "addworker/?");
 
@@ -804,17 +502,23 @@ void doServer(WiFiClient *client)
         client->println("        <form action=\"/addworker/\" method=\"GET\">");
         client->println("          <p>");
         client->println("            <label for=\"name\">First name</label>");
-        client->println("            <input type=\"text\" id =\"name\" name=\"name\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\"><br>");
+        client->println("            <input type=\"text\" id =\"name\" name=\"name\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\" required><br>");
         client->println("            <label for=\"lname\">Last Name</label>");
-        client->println("            <input type=\"text\" id =\"lname\" name=\"lname\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\"><br>");
+        client->println("            <input type=\"text\" id =\"lname\" name=\"lname\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\" required><br>");
         client->println("            <label for=\"tagID\">ID of RFID tag</label>");
-        client->println("            <input type=\"number\" id =\"tagID\" name=\"tagID\"><br>");
+        client->println("            <input type=\"number\" id =\"tagID\" name=\"tagID\" required><br>");
         client->println("            <label for=\"department\">Department</label>");
-        client->println("            <input type=\"text\" id =\"department\" name=\"department\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\"><br>");
+        client->println("            <select id=\"department\" name=\"department\" required>");
+        client->println("                <option value=\"\" disabled selected>Select one</option>");
+        for (int i = 0; i < numberOfDepartments; i++)
+        {
+            client->printf("                <option value=\"%s\">%s</option>\r\n", departments[i], departments[i]);
+        }
+        client->println("            </select><br>");
         client->println("            <label for=\"image\">Image name</label>");
         client->println("            <input type=\"text\" id =\"image\" name=\"image\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\"><br>");
         client->println("            <label for=\"password\">Password</label>");
-        client->println("            <input type=\"password\" id =\"key\" name=\"key\"><br>");
+        client->println("            <input type=\"password\" id =\"key\" name=\"key\" required><br>");
         client->println("            <input type =\"submit\" value =\"Add worker\">");
         client->println("        </form>");
         client->println("        <a href=\"/\"> <button>Back</button> </a>");
@@ -1275,7 +979,7 @@ void doServer(WiFiClient *client)
         client->println(
             "            <input type=\"checkbox\" id=\"dataRemoval\" name=\"dataRemoval\" value=\"1\"><br>");
         client->println("            <label for=\"password\">Password</label>");
-        client->println("            <input type=\"password\" id =\"key\" name=\"key\"><br>");
+        client->println("            <input type=\"password\" id =\"key\" name=\"key\" required><br>");
         client->println("            <input type =\"submit\" value =\"Remove\">");
         client->println("        </form>");
         client->println("        <a href=\"/\"> <button>Back</button> </a>");

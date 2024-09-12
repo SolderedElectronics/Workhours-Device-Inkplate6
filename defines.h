@@ -1,5 +1,5 @@
-#ifndef __DATATYPES_H__
-#define __DATATYPES_H__
+#ifndef __DEVICE_DEFINES_H__
+#define __DEVICE_DEFINES_H__
 
 #include "stdlib.h"
 
@@ -15,6 +15,13 @@
 #define DEFAULT_FOLDER_NAME "WorkingHoursDevice"
 #define DEFAULT_IMAGE_NAME  "defaultImage.bmp"
 #define DEFAULT_IMAGE_PATH  DEFAULT_FOLDER_NAME "/" DEFAULT_IMAGE_NAME
+
+// All departments. Add if needed. Do not modify alreday added.
+static const char *departments[] = {"Engineering", "Manufacturing", "Operations", "Sales & Marketing", "Warehouse & Purchasing", "Finance"};
+static const int numberOfDepartments = sizeof(departments) / sizeof(departments[0]);
+
+// mDNS - Name of the ESP32 on the localhost.
+#define ESP32_MDNS_NAME "workhoursdevice"
 
 // Fonts
 #define FONT_FILENAME "SourceSansPro-Regular.ttf"
@@ -49,10 +56,10 @@ const int overtimeHours[] = {0, 9, 9, 9, 9, 4, 0};
 #define LOGGING_LOG_TIMEOUT 600
 
 // Define different types of buzzing sounds
-#define BUZZ_ERROR_QUICK buzzer(2, 150)
-#define BUZZ_SYS_ERROR   buzzer(4, 500);
-#define BUZZ_LOG         buzzer(1, 500)
-#define BUZZ_LOG_ERROR   buzzer(3, 50);
+#define BUZZ_ERROR_QUICK(x) buzzer(x, 2, 150);
+#define BUZZ_SYS_ERROR(x)   buzzer(x, 4, 500);
+#define BUZZ_LOG(x)         buzzer(x, 1, 500);
+#define BUZZ_LOG_ERROR(x)   buzzer(x, 3, 50);
 
 // Define buzzer pin on the I/O expander
 #define BUZZER_PIN IO_PIN_B7
@@ -69,6 +76,7 @@ struct employeeData
     struct employeeData *next;
 };
 
-#define DEBUG_PRINT(...) { Serial.printf("[DEBUG from %s()]", __func__); Serial.printf(__VA_ARGS__); Serial.println(); }
+// Use this for debuging.
+#define DEBUG_PRINT(...) { Serial.printf("[DEBUG from %s() ]", __func__); Serial.printf(__VA_ARGS__); Serial.println(); }
 
 #endif

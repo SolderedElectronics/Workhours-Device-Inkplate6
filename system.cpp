@@ -93,7 +93,7 @@ int deviceInit(Inkplate *_display, char *_ssid, char *_password, WiFiServer *_se
     if (!MDNS.begin(ESP32_MDNS_NAME))
         errorDisplay(_display, "mDNS set failed. Device halted. Please check the network and reset the device.", false, true);
 
-    // Start server
+    // Start server.
     _display->print("\nStarting the web server");
     _display->partialUpdate();
     _server->begin();

@@ -209,4 +209,7 @@ void drawIPAddress(Inkplate *_display, int _x, int _y)
 
     // Printout the IP address
     _display->print(WiFi.localIP());
+
+    // Print also mDNS.
+    _display->printf(" or %s.localhost/", ESP32_MDNS_NAME);
 }

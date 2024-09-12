@@ -8,6 +8,7 @@
 #include "gui.h"
 #include "defines.h"
 #include "include/mainUI.h"
+#include "ArduinoJson.h"
 
 Inkplate display(INKPLATE_1BIT); // Create an object on Inkplate library and also set library into 1 Bit mode (BW)
 WiFiServer server(80);
@@ -991,12 +992,14 @@ void doServer(WiFiClient *client)
     }
     else if (strstr(buffer, "/api"))
     {
+        // Create static ArduinoJSON document.
+        StaticJsonDocument<256> doc;
+
         // API link is [IP Address]/api/getWeekHours/[TAGID]
         // Send response (200 OK)
         client->println("HTTP/1.1 200 OK");
         client->println("Content-type: application/json");
         client->println("Connection: close");
-        client->println();
 
         // This is block of code for the API interface
         // Check what kind of data is needed (added for future add-ons).
@@ -1026,6 +1029,8 @@ void doServer(WiFiClient *client)
                     // Arrays for timestamp
                     char loginTimestampStr[30];
                     char logoutTimestampStr[30];
+                    char dailyStr[30];
+                    char weeklyStr[30];
 
                     // Get weekly working hours
 
@@ -1039,6 +1044,12 @@ void doServer(WiFiClient *client)
                     // Get the last log data (to check if the logout is done)
                     if (logger.findLastLog(employee, &lastLoginInList, &lastLogoutInList))
                     {
+                        // Make a JSON.
+                        doc["firstName"] = employee->firstName;
+                        doc["firstName"] = employee->lastName;
+                        doc["tagId"] = String(tagID);
+                        doc["department"] = employee->department;
+
                         // Send data to the client. Note that is different calculation if logout is done.
                         if (lastLogoutInList == 0 && lastLoginInList != 0)
                         {
@@ -1049,47 +1060,69 @@ void doServer(WiFiClient *client)
                             // Make string timestamp
                             createTimeStampFromEpoch(loginTimestampStr, lastLogin);
 
-                            // Send the data to the client
-                            client->printf("Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: "
-                                            "%s\r\nLogout: Not Done Yet\r\n",
-                                            dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600,
-                                            weekHours / 60 % 60, weekHours % 60, loginTimestampStr);
+                            // Write the login/logout data.
+                            doc["status"] = "ok";
+                            doc["state"] = "loginOnly";
+                            doc["first_login"] = loginTimestampStr;
+                            doc["last_logout"] = "--:--:-- --.--.----.";
+                            sprintf(dailyStr, "%02d:%02d:%02d", dayHours / 3600, dayHours / 60 % 60, dayHours % 60);
+                            sprintf(weeklyStr, "%02d:%02d:%02d", weekHours / 3600, weekHours / 60 % 60, weekHours % 60);
+                            doc["daily"] = dailyStr;
+                            doc["weekly"] = weeklyStr;
                         }
                         else
                         {
                             // Make string timestamp
                             createTimeStampFromEpoch(loginTimestampStr, lastLogin);
                             createTimeStampFromEpoch(logoutTimestampStr, lastLogout);
-                            client->printf(
-                                "Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: %s\r\nLogout: %s\r",
-                                dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600,
-                                weekHours / 60 % 60, weekHours % 60, lastLogin != -1 ? loginTimestampStr : "----",
-                                lastLogout != -1 ? logoutTimestampStr : "----");
+                            // Write the login/logout data.
+                            doc["status"] = "ok";
+                            doc["state"] = "logout";
+                            doc["first_login"] = loginTimestampStr;
+                            doc["last_logout"] = logoutTimestampStr;
+                            sprintf(dailyStr, "%02d:%02d:%02d", dayHours / 3600, dayHours / 60 % 60, dayHours % 60);
+                            sprintf(weeklyStr, "%02d:%02d:%02d", weekHours / 3600, weekHours / 60 % 60, weekHours % 60);
+                            doc["daily"] = dailyStr;
+                            doc["weekly"] = weeklyStr;
                         }
                     }
                     else
                     {
                         // Send error if microSD card can't be found.
-                        client->println("microSD Card access error!");
+                        doc["status"] = "error";
+                        doc["state"] = "microSdCardFault";
                     }
                 }
                 else
                 {
                     // Send error if the wrong ID is sent.
-                    client->println("Wrong API ID!");
+                    doc["status"] = "error";
+                    doc["state"] = "wrongApiId";
                 }
             }
             else
             {
                 // Send error message for the wrong API parameter
-                client->println("Wrong API parameter!");
+                doc["status"] = "error";
+                doc["state"] = "wrongApiParameter";
             }
         }
         else
         {
             // Send error message for the wrong API request
-            client->println("Wrong API request!");
+            doc["status"] = "error";
+            doc["state"] = "wrongApiId";
         }
+
+
+
+        // Send data to the client.
+        String jsonString;
+        serializeJson(doc, jsonString);
+        client->print("Content-Length: ");
+        client->println(jsonString.length());
+        client->println();
+        client->println(jsonString);
     }
     else
     {

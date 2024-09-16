@@ -50,9 +50,6 @@ void setup()
     display.clearDisplay();
     mainDraw(&display, wdayName, monthName);
     display.display();
-
-    #warning Remove this!
-    logger.createDailyReport();
 }
 
 void loop()

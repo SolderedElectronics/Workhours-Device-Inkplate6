@@ -916,7 +916,7 @@ int Logging::createDailyReport()
 
             // Calculate overtime hours
             // overtimeHours defines how much workhours are allowed in the specific workday. Defined in dataTypes.h
-            _overtime = _workHours - overtimeHours[_myTime.tm_wday] * 60 * 60;
+            _overtime = _workHours - defaultWeekWorkHours[_myTime.tm_wday] * 60 * 60;
 
             // No negative overtime.
             if (_overtime < 0)
@@ -928,7 +928,7 @@ int Logging::createDailyReport()
                     _myTime.tm_mon + 1, _myTime.tm_year + 1900, _timestampLoginStr,
                     _lastLogoutEpoch != -1 ? _timestampLogoutStr : LOGGING_ERROR_STRING, _workHours / 3600,
                     _workHours / 60 % 60, _workHours % 60, _overtime / 3600, _overtime / 60 % 60, _overtime % 60,
-                    _missedLogout == 1 ? 'Y' : ' ');
+                    _missedLogout == 1 ? 'Y' : 'N');
             _myFile.println(_pathStr);
 
             // Close the file (avoid memory leak at all cost!)
@@ -978,11 +978,11 @@ int Logging::findLastLog(struct employeeData *_e, int32_t *_login, int32_t *_log
 
     // First check if the micro SD card can be initialized
     if (!sd.begin(15, SD_SCK_MHZ(10)))
-        return 0;
+        return -1;
 
     // If micro SD card init is ok, go to the root of the micro SD card
     if (!sd.chdir(true))
-        return 0;
+        return -1;
 
     // Find the file
     if (getEmployeeFile(&_myFile, _e, _ink->rtcGetMonth(), _ink->rtcGetYear(), 1))

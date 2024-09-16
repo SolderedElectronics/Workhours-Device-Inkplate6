@@ -120,9 +120,13 @@ int fetchTime(Inkplate *_display)
     DynamicJsonDocument _doc(500);
     DeserializationError _err;
     char _temp[500];
+    char _apiUrl[100];
+
+    // Create URL for the API Call.
+    sprintf(_apiUrl, "https://worldtimeapi.org/api/timezone/%s/%s", API_CLOCK_CONTINENT, API_CLOCK_REGION);
 
     // Try to get the JSON.
-    _http.begin("https://worldtimeapi.org/api/timezone/Europe/Zagreb");
+    _http.begin(_apiUrl);
 
     // Send a request.
     int _httpCode = _http.GET();
@@ -152,12 +156,16 @@ int fetchTime(Inkplate *_display)
         // Set it on Inkplate RTC.
         _display->rtcSetEpoch(_epoch + _epochTimezoneOffset + _epochDstOffset);
         _display->rtcGetRtcData();
-        return 1;
+    }
+    else
+    {
+        // No HTTP OK? Return error.
+        return 0;
     }
 
     // Stop the client (just in case).
     _http.end();
 
-    // If you got this far, that means something is wrong. Return error.
-    return 0;
+    // If you got this far, that means clock is set, return success.
+    return 1;
 }

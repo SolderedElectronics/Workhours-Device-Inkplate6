@@ -60,8 +60,8 @@ void setup()
 
     // Draw the main screen
     display.clearDisplay();
-    mainDraw();
-    changeNeeded = 1;
+    mainDraw(&display, wdayName, monthName);
+    display.display();
 }
 
 void loop()
@@ -147,14 +147,14 @@ void loop()
     {
         menuTimeout = 0;
         display.clearDisplay();
-        mainDraw();
+        mainDraw(&display, wdayName, monthName);
         changeNeeded = 1;
     }
     else if ((menuTimeout == 0) &&(unsigned long)(millis() - periodicRefresh) >= 60000UL) // Periodically refresh screen every 60 seconds.
     {
         periodicRefresh = millis();
         display.clearDisplay();
-        mainDraw();
+        mainDraw(&display, wdayName, monthName);
         changeNeeded = 1;
 
         // Update the RTC data.
@@ -425,14 +425,14 @@ void doServer(WiFiClient *client)
         client->println("<!DOCTYPE html>");
         client->println(" <html>");
         client->println(" <head>");
-        client->println("   <title>Worktime</title>");
+        client->println("   <title>Soldered Time Logger Device</title>");
         client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
         client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
         client->println(" </head>");
         client->println(" <body>");
         client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("  </div>");
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
@@ -488,14 +488,14 @@ void doServer(WiFiClient *client)
         client->println("<!DOCTYPE html>");
         client->println(" <html>");
         client->println(" <head>");
-        client->println("   <title>Worktime</title>");
+        client->println("   <title>Soldered Time Logger Device</title>");
         client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
         client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
         client->println(" </head>");
         client->println(" <body>");
         client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("  </div>");
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
@@ -548,14 +548,14 @@ void doServer(WiFiClient *client)
         client->println("<!DOCTYPE html>");
         client->println(" <html>");
         client->println(" <head>");
-        client->println("   <title>Worktime</title>");
+        client->println("   <title>Soldered Time Logger Device</title>");
         client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
         client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
         client->println(" </head>");
         client->println(" <body>");
         client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("  </div>");
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
@@ -725,7 +725,7 @@ void doServer(WiFiClient *client)
         client->println(" </head>");
         client->println(" <body>");
         client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("  </div>");
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
@@ -901,14 +901,14 @@ void doServer(WiFiClient *client)
         client->println("<!DOCTYPE html>");
         client->println("<html>");
         client->println("<head>");
-        client->println("<title>Worktime</title>");
+        client->println("<title>Soldered Time Logger Device</title>");
         client->println("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         client->println("<link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
         client->println("<link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
         client->println("</head>");
         client->println("<body>");
         client->println("<div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("</div>");
         client->println("<div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
@@ -937,14 +937,14 @@ void doServer(WiFiClient *client)
         client->println("<!DOCTYPE html>");
         client->println(" <html>");
         client->println(" <head>");
-        client->println("   <title>Worktime</title>");
+        client->println("   <title>Soldered Time Logger Device</title>");
         client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
         client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
         client->println(" </head>");
         client->println(" <body>");
         client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("  </div>");
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
@@ -1041,12 +1041,17 @@ void doServer(WiFiClient *client)
                     weekHours = logger.getEmployeeWeekHours(tagID, display.rtcGetEpoch());
                     dayHours = logger.getEmployeeDailyHours(tagID, display.rtcGetEpoch(), &lastLogin, &lastLogout);
 
-                    // Get the last log data (to check if the logout is done)
-                    if (logger.findLastLog(employee, &lastLoginInList, &lastLogoutInList))
+                    // Get the last log data (to check if the logout is done).
+                    int _lastLogFlag = logger.findLastLog(employee, &lastLoginInList, &lastLogoutInList);
+
+                    // _lastLogFlag = 0 -> microSD card ok, but no login data.
+                    // _lastLogFlag = 1 -> microSD card ok & login file has been found.
+                    // _lastLogFlag = -1 -> microSD card error.
+                    if (_lastLogFlag)
                     {
                         // Make a JSON.
                         doc["firstName"] = employee->firstName;
-                        doc["firstName"] = employee->lastName;
+                        doc["lastName"] = employee->lastName;
                         doc["tagId"] = String(tagID);
                         doc["department"] = employee->department;
 
@@ -1062,7 +1067,7 @@ void doServer(WiFiClient *client)
 
                             // Write the login/logout data.
                             doc["status"] = "ok";
-                            doc["state"] = "loginOnly";
+                            doc["status_desc"] = "loginOnly";
                             doc["first_login"] = loginTimestampStr;
                             doc["last_logout"] = "--:--:-- --.--.----.";
                             sprintf(dailyStr, "%02d:%02d:%02d", dayHours / 3600, dayHours / 60 % 60, dayHours % 60);
@@ -1077,7 +1082,7 @@ void doServer(WiFiClient *client)
                             createTimeStampFromEpoch(logoutTimestampStr, lastLogout);
                             // Write the login/logout data.
                             doc["status"] = "ok";
-                            doc["state"] = "logout";
+                            doc["status_desc"] = "logout";
                             doc["first_login"] = loginTimestampStr;
                             doc["last_logout"] = logoutTimestampStr;
                             sprintf(dailyStr, "%02d:%02d:%02d", dayHours / 3600, dayHours / 60 % 60, dayHours % 60);
@@ -1086,35 +1091,43 @@ void doServer(WiFiClient *client)
                             doc["weekly"] = weeklyStr;
                         }
                     }
+                    else if (!_lastLogFlag)
+                    {
+                            // Login file is missing.
+                            doc["status"] = "ok";
+                            doc["status_desc"] = "noLoginData";
+                            doc["first_login"] = "--:--:-- --.--.----.";
+                            doc["last_logout"] = "--:--:-- --.--.----.";
+                            doc["daily"] = "--:--:--";
+                            doc["weekly"] = "--:--:--";
+                    }
                     else
                     {
                         // Send error if microSD card can't be found.
                         doc["status"] = "error";
-                        doc["state"] = "microSdCardFault";
+                        doc["status_desc"] = "microSdCardFault";
                     }
                 }
                 else
                 {
                     // Send error if the wrong ID is sent.
                     doc["status"] = "error";
-                    doc["state"] = "wrongApiId";
+                    doc["status_desc"] = "wrongApiId";
                 }
             }
             else
             {
                 // Send error message for the wrong API parameter
                 doc["status"] = "error";
-                doc["state"] = "wrongApiParameter";
+                doc["status_desc"] = "wrongApiParameter";
             }
         }
         else
         {
             // Send error message for the wrong API request
             doc["status"] = "error";
-            doc["state"] = "wrongApiId";
+            doc["status_desc"] = "wrongApiId";
         }
-
-
 
         // Send data to the client.
         String jsonString;
@@ -1134,14 +1147,14 @@ void doServer(WiFiClient *client)
         client->println("<!DOCTYPE html>");
         client->println(" <html>");
         client->println(" <head>");
-        client->println("   <title>Worktime</title>");
+        client->println("   <title>Soldered Time Logger Device</title>");
         client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
         client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
         client->println(" </head>");
         client->println(" <body>");
         client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("  </div>");
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");

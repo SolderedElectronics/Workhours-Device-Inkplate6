@@ -12,7 +12,7 @@
 #define LOG_SCREEN_TIME 10000UL
 
 // Folder names and structure on micro SD Card
-#define DEFAULT_FOLDER_NAME "WorkingHoursDevice"
+#define DEFAULT_FOLDER_NAME "SolderedTimeLoggerDevice"
 #define DEFAULT_IMAGE_NAME  "defaultImage.bmp"
 #define DEFAULT_IMAGE_PATH  DEFAULT_FOLDER_NAME "/" DEFAULT_IMAGE_NAME
 
@@ -21,13 +21,18 @@ static const char *departments[] = {"Engineering", "Manufacturing", "Operations"
 static const int numberOfDepartments = sizeof(departments) / sizeof(departments[0]);
 
 // mDNS - Name of the ESP32 on the localhost.
-#define ESP32_MDNS_NAME "workhoursdevice"
+#define ESP32_MDNS_NAME "timeloggerdevice"
 
-// Fonts
+// Font. Change if needed (used by the web interface).
 #define FONT_FILENAME "SourceSansPro-Regular.ttf"
 #define FONT_NAME     "SourceSansPro"
 #define FONT_TYPE     "Regular"
 #define FONT_FORMAT   "opentype"
+
+// API for the clock adjustment.
+// Full list see here: https://worldtimeapi.org/timezones.
+#define API_CLOCK_CONTINENT     "Europe"
+#define API_CLOCK_REGION        "Zagreb"
 
 // Tag for missed logout in the list.
 #define LOGGING_ERROR_STRING "??????????"
@@ -49,7 +54,7 @@ const char monthName[12][4] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", 
 // Maximal worktime in the week. First element is sunday.
 // For example, first element in the array represents sunday and in sunday every working hours is overtime.
 // But for monday (second element in the list) employee can work 9 hours, anything above that is overtime.
-const int overtimeHours[] = {0, 9, 9, 9, 9, 4, 0};
+const int defaultWeekWorkHours[] = {0, 9, 9, 9, 9, 4, 0};
 
 // Timeout for logging - it nedds to pass as leasts this defined seconds from last loggeg time to be able to log the
 // tag.

@@ -2,11 +2,11 @@
 #include "gui.h"
 
 #include "Inkplate.h"
-#include "include/SourceSansPro_Regular16pt7b.h"
+#include "SourceSansPro_Regular16pt7b.h"
 #include "defines.h"
 #include "system.h"
 #include "helpers.h"
-#include "include/icons.h"
+#include "icons.h"
 
 class Inkplate;
 

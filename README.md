@@ -57,6 +57,9 @@ Soldered Inkplate 6 based time logger device for logging work hours data of empl
   - Month names in `monthName`
   - Default work time for every day in a week (in hours) in `defaultWeekWorkHours` for overtime calculation
   - login/logout "cooldown" time in `LOGGING_LOG_TIMEOUT`
+- Create folder name same as `DEFAULT_FOLDER_NAME` (watch out, it's case sensitive!) and add all files from microSdCardPrep in this directory.
+- In src/defines.h change WiFi SSID and WiFi Password
+- Also in src/defines.h change IP address settings. Note: secondary DNS IP Address if Google DNS.
 
 ## Connections
 Two additional parts must be connected to the loginh
@@ -76,3 +79,9 @@ Also, baud rate switches must be set in next position (to set a baud rate of 576
 
 ### Buzzer
 Connect P1-7 of the GPIO EXPANDER 1 to the (+) of the magnetic buzzer. Other end of the buzzer connect to the ground. To protect GPIO expander pin, connect Schottky Diode parallel to the buzezr, with the anode of the diode connected to the GND.
+
+## Notes
+This is updated version, so files from previous version won't work. Main differences are:
+- `;` is replaced by `,` is CVS file
+- Removed unnecessary spaces from CVS files
+- Removed unnecessary `,` or `;` at the end

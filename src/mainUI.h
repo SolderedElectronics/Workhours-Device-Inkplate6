@@ -1,8 +1,8 @@
 // Include GUI functions.
-#include "../gui.h"
+#include "gui.h"
 
 // Include system functions.
-#include "../system.h"
+#include "system.h"
 
 // Include icons.
 #include "icons.h"

@@ -778,7 +778,7 @@ int32_t Logging::getEmployeeDailyHours(uint64_t _tagID, uint32_t _epoch, int32_t
             }
             else if ((_login >= _startDayEpoch) && (_login <= _endDayEpoch) && (_dataFound == 1) && (_logout == 0))
             {
-                // If someone forgot to logout, there will be only one enrty and that's for login, logut will be missing
+                // If someone forgot to logout, there will be only one enrty and that's for login, logout will be missing
                 if (_missedLogutFlag != NULL)
                     *_missedLogutFlag = 1;
                 if (_firstTimeLogin == -1)
@@ -885,7 +885,7 @@ int Logging::createDailyReport()
             getEmployeeDailyHours(_e->ID, _dailyReportEpoch, &_firstLoginEpoch, &_lastLogoutEpoch, &_missedLogout);
 
         // Check if the data for this employee is avaialbe. If not, ignore it.
-        if (_workHours > 0 && (_firstLoginEpoch != -1 || _firstLoginEpoch != 0))
+        if ((_workHours > 0 || _missedLogout) && (_firstLoginEpoch != -1 || _firstLoginEpoch != 0))
         {
             // Create timestamp strings for login and logout times
             createTimeStampFromEpoch(_timestampLoginStr, _firstLoginEpoch);

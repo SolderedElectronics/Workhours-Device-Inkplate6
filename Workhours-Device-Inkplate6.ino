@@ -1,31 +1,19 @@
-#include "system.h"
+#include "src/system.h"
 #include "Inkplate.h"
-#include "linkedList.h"
-#include "logging.h"
-#include "include/SourceSansPro_Regular16pt7b.h"
-#include "helpers.h"
-#include "system.h"
-#include "gui.h"
-#include "defines.h"
-#include "include/mainUI.h"
+#include "src/linkedList.h"
+#include "src/logging.h"
+#include "src/SourceSansPro_Regular16pt7b.h"
+#include "src/helpers.h"
+#include "src/system.h"
+#include "src/gui.h"
+#include "src/defines.h"
+#include "src/mainUI.h"
 #include "ArduinoJson.h"
 
 Inkplate display(INKPLATE_1BIT); // Create an object on Inkplate library and also set library into 1 Bit mode (BW)
 WiFiServer server(80);
 LinkedList myList;
 Logging logger;
-
-// Change WiFi and IP data to suit your setup.
-char ssid[] = "Soldered";
-char pass[] = "dasduino";
-// Set your Static IP address
-IPAddress localIP(192, 168, 71, 98); // IP address should be set to desired address
-// Set your Gateway IP address
-// Gateway address (in most cases it's the first address of selected IP addreess subnet)
-IPAddress gateway(192, 168, 71, 1);
-IPAddress subnet(255, 255, 255, 0);   // Subnet mask
-IPAddress primaryDNS(192, 168, 71, 1); // Primary DNS (use router / ISP DNS as primary one)
-IPAddress secondaryDNS(8, 8, 4, 4);   // Secondary DNS (use google as secondary one)
 
 // Global variables.
 // Used for menu refreshing.
@@ -62,6 +50,9 @@ void setup()
     display.clearDisplay();
     mainDraw(&display, wdayName, monthName);
     display.display();
+
+    #warning Remove this!
+    logger.createDailyReport();
 }
 
 void loop()

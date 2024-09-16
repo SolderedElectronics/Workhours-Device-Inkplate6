@@ -902,7 +902,7 @@ int Logging::createDailyReport()
                 // Try to create the file, if file create failed, something is wrong, abort, abort!
                 if (_myFile.open(_pathStr, O_CREAT | O_RDWR))
                 {
-                    _myFile.println("DOW, Time, Date, First Login, Last Logout, Work Time, Overtime, Missed logout");
+                    _myFile.println("DOW,Time,Date,First Login,Last Logout,Work Time,Overtime,Missed logout");
                     _myFile.close();
                 }
             }

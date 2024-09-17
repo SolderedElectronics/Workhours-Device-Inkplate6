@@ -1119,7 +1119,7 @@ void doServer(WiFiClient *client)
 
         // Send data to the client.
         String jsonString;
-        serializeJson(doc, jsonString);
+        serializeJsonPretty(doc, jsonString);
         client->print("Content-Length: ");
         client->println(jsonString.length());
         client->println();

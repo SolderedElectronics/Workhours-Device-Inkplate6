@@ -39,9 +39,9 @@ Soldered Inkplate 6 based time logger device for logging work hours data of empl
 - microSD card with loaded data from microSD card folder
 - Soldered RFID Reader with multiple tags for each employee
 - Magnetic buzzer
-- Installed Inkplate Board Definition
-- Installed Inkplate Library
-- Installed ArduinoJSON library
+- Installed Inkplate Board Definition (v8.1.0)
+- Installed Inkplate Library (v9.1.0)
+- Installed ArduinoJSON library (v7.0.4)
 - 5V USB Supply
 - 3D printed Case (optional)
 - Stable WiFi connection

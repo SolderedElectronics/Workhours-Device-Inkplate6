@@ -46,7 +46,7 @@ int Logging::begin(SdFat *_s, LinkedList *_l, Inkplate *_i)
     }
 
     // Open a file with all employees.
-    if (!_file.open("workers.csv", FILE_READ))
+    if (!_file.open("employees.csv", FILE_READ))
     {
         // Again, this should never happen!
         return 0;
@@ -210,7 +210,7 @@ int Logging::checkFolders()
 
 int Logging::updateEmployeeFile()
 {
-    // First delete old workers.csv file
+    // First delete old employees.csv file
 
     // File class.
     SdFile _file;
@@ -231,10 +231,10 @@ int Logging::updateEmployeeFile()
 
     // Try to delete wokreks file. No need for checking if delete was successful. If it is, great, if not, well maybe
     // it's already deleted, or it doesn't exists.
-    _sd->remove("workers.csv");
+    _sd->remove("employees.csv");
 
     // Now make a new file with updated list.
-    if (!_file.open("workers.csv", FILE_WRITE))
+    if (!_file.open("employees.csv", FILE_WRITE))
     {
         // File create has failed, return 0.
         return 0;

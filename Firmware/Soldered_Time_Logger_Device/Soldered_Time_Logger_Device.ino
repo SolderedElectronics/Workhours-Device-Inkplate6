@@ -396,7 +396,7 @@ void doServer(WiFiClient *client)
             free(ps);
         }
     }
-    else if (strstr(buffer, "addworker/?"))
+    else if (strstr(buffer, "addemployee/?"))
     {
         client->println("HTTP/1.1 200 OK");
         client->println("Content-type:text/html");
@@ -408,7 +408,7 @@ void doServer(WiFiClient *client)
         char tempImage[129];
         char tempDepartment[101];
         char tempKey[51];
-        char *temp = strstr(buffer, "addworker/?");
+        char *temp = strstr(buffer, "addemployee/?");
 
         client->println("<!DOCTYPE html>");
         client->println(" <html>");
@@ -428,7 +428,7 @@ void doServer(WiFiClient *client)
 
         // Parse the input data. There should be 6 items parsed.
         int _res =
-            sscanf(temp, "addworker/?name=%[^'&']&lname=%[^'&']&tagID=%llu&department=%[^'&']&image=%[^'&']&key=%s",
+            sscanf(temp, "addemployee/?name=%[^'&']&lname=%[^'&']&tagID=%llu&department=%[^'&']&image=%[^'&']&key=%s",
                    tempFName, tempLName, &(tempID), tempDepartment, tempImage, tempKey);
 
         // Fix http text for all string inputs (covert HEX into ASCII, for example '# sign is in HTTP response %23 -
@@ -459,14 +459,14 @@ void doServer(WiFiClient *client)
         }
 
         client->println("        <a href=\"/\"> <button>Home</button> </a>");
-        client->println("        <a href=\"/addworker\"> <button>Add another Employee</button> </a>");
+        client->println("        <a href=\"/employee\"> <button>Add another Employee</button> </a>");
         client->println("      </div>");
         client->println("    </div>");
         client->println("  </div>");
         client->println(" </body>");
         client->println("</html>");
     }
-    else if (strstr(buffer, "/addworker"))
+    else if (strstr(buffer, "/employee"))
     {
         client->println("HTTP/1.1 200 OK");
         client->println("Content-type:text/html");
@@ -474,21 +474,43 @@ void doServer(WiFiClient *client)
         client->println("Connection: close");
         client->println();
         client->println("<!DOCTYPE html>");
-        client->println(" <html>");
-        client->println(" <head>");
+        client->println("<html>");
+        client->println("<head>");
         client->println("   <title>Soldered Time Logger Device</title>");
         client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
         client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
-        client->println(" </head>");
-        client->println(" <body>");
+        client->println("   <script>");
+        client->println("       function clearTextOnFocus(input) {");
+        client->println("           if (input.value === input.defaultValue) {");
+        client->println("               input.value = '';"); 
+        client->println("           }");
+        client->println("       }");
+
+        client->println("       function restoreTextOnBlur(input) {");
+        client->println("           if (input.value === '') {");
+        client->println("               input.value = input.defaultValue;");
+        client->println("           }");
+        client->println("       }");
+
+        client->println("       function checkForPng(input) {");
+        client->println("           if (!input.value.toLowerCase().endsWith('.png')) {");
+        client->println("               alert('Wrong image format (use PNG) or extension is missing!');");
+        client->println("               return false;");
+        client->println("           }");
+        client->println("           return true;");
+        client->println("       }");
+        client->println("   </script>");
+        client->println("</head>");
+
+        client->println("<body>");
         client->println("  <div class=\"topnav\">");
         client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("  </div>");
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
-        client->println("        <form action=\"/addworker/\" method=\"GET\">");
+        client->println("        <form action=\"/addemployee/\" method=\"GET\" onsubmit=\"return checkForPng(document.getElementById('image'))\">");
         client->println("          <p>");
         client->println("            <label for=\"name\">First name</label>");
         client->println("            <input type=\"text\" id =\"name\" name=\"name\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\" required><br>");
@@ -499,22 +521,22 @@ void doServer(WiFiClient *client)
         client->println("            <label for=\"department\">Department</label>");
         client->println("            <select id=\"department\" name=\"department\" required>");
         client->println("                <option value=\"\" disabled selected>Select one</option>");
-        for (int i = 0; i < numberOfDepartments; i++)
-        {
+        for (int i = 0; i < numberOfDepartments; i++) {
             client->printf("                <option value=\"%s\">%s</option>\r\n", departments[i], departments[i]);
         }
         client->println("            </select><br>");
         client->println("            <label for=\"image\">Image name</label>");
-        client->println("            <input type=\"text\" id =\"image\" name=\"image\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\"><br>");
+        client->printf("             <input type=\"text\" id =\"image\" name=\"image\" onkeydown=\"return /[a-z0-9\\.\\-\\_\\&\\ ]/i.test(event.key)\" value=\"%s\"\r\n", DEFAULT_IMAGE_NAME);
+        client->println("                         onfocus=\"clearTextOnFocus(this)\" onblur=\"restoreTextOnBlur(this)\"><br>");
         client->println("            <label for=\"password\">Password</label>");
         client->println("            <input type=\"password\" id =\"key\" name=\"key\" required><br>");
-        client->println("            <input type =\"submit\" value =\"Add worker\">");
+        client->println("            <input type =\"submit\" value =\"Add employee\">");
         client->println("        </form>");
         client->println("        <a href=\"/\"> <button>Back</button> </a>");
         client->println("      </div>");
         client->println("    </div>");
         client->println("  </div>");
-        client->println(" </body>");
+        client->println("</body>");
         client->println("</html>");
     }
     else if (strstr(buffer, "/favicon.ico"))
@@ -574,9 +596,9 @@ void doServer(WiFiClient *client)
                 }
                 myList.removeEmployee(_idToRemove);
                 logger.updateEmployeeFile();
-                client->println("        <p>Worker removed successfully!</p>");
+                client->println("        <p>Employee removed successfully!</p>");
                 client->println("        <a href=\"/\"> <button>Home</button> </a>");
-                client->println("        <a href=\"/remove\"> <button>Remove another worker</button> </a>");
+                client->println("        <a href=\"/remove\"> <button>Remove another employee</button> </a>");
             }
             else
             {
@@ -593,7 +615,7 @@ void doServer(WiFiClient *client)
     else if (strstr(buffer, "/monthly/?"))
     {
         // This block of code will send the needed file to the client.
-        // It will send report file of a worker from the microSD card
+        // It will send report file of a employee from the microSD card
 
         // Try to find the start of the request
         char *startStr = strstr(buffer, "/monthly/?");
@@ -613,7 +635,7 @@ void doServer(WiFiClient *client)
             // HTTP GET req. will look something like this:
             // /monthly/?worker=[FirstName]_[LastName]_[ID]&month=[Year]-[Month]&rawData=1
             // There should me minimum 5 arguments (first name, last name, ID, Year and month, rawDataFlag is optional)
-            if (sscanf(startStr, "/monthly/?worker=%[^'_']_%[^'_']_%llu&month=%d-%d&rawData=%d", employee.firstName,
+            if (sscanf(startStr, "/monthly/?employee=%[^'_']_%[^'_']_%llu&month=%d-%d&rawData=%d", employee.firstName,
                        employee.lastName, (unsigned long long *)&(employee.ID), &year, &month, &rawDataFlag) >= 5)
             {
                 SdFile myFile;
@@ -719,8 +741,8 @@ void doServer(WiFiClient *client)
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
         client->println("        <form action=\"/monthly/\" method=\"GET\">");
-        client->println("            <label for=\"worker\">Choose worker:</label>");
-        client->println("            <select name=\"worker\" id=\"worker\">");
+        client->println("            <label for=\"employee\">Choose employee:</label>");
+        client->println("            <select name=\"employee\" id=\"employee\">");
 
         // Get the number of the employees.
         int numberOfEmloyees = myList.numberOfElements();
@@ -770,7 +792,7 @@ void doServer(WiFiClient *client)
         client->println(" </body>");
         client->println("</html>");
     }
-    else if (strstr(buffer, "/byworker/?"))
+    else if (strstr(buffer, "/byemployee/?"))
     {
         // If download of the file is requested, first send 200 OK.
         client->println("HTTP/1.1 200 OK");
@@ -779,7 +801,7 @@ void doServer(WiFiClient *client)
         if (sd.begin(15, SD_SCK_MHZ(10)))
         {
             // Get the start of the response of the HTTP GET
-            char *startStr = strstr(buffer, "/byworker/?");
+            char *startStr = strstr(buffer, "/byemployee/?");
 
             // If is found, start parsing the data
             if (startStr != NULL)
@@ -789,7 +811,7 @@ void doServer(WiFiClient *client)
                 int month;
 
                 // For successful parsing, two arguments must be provided in the HTTP GET request (year and month)
-                if (sscanf(startStr, "/byworker/?date=%d-%d", &year, &month) == 2)
+                if (sscanf(startStr, "/byemployee/?date=%d-%d", &year, &month) == 2)
                 {
                     // Now get whole daily from every employee
                     // But first get how much employees there are
@@ -880,7 +902,7 @@ void doServer(WiFiClient *client)
             client->println("microSD Card access error!");
         }
     }
-    else if (strstr(buffer, "/byworker"))
+    else if (strstr(buffer, "/byemployee"))
     {
         client->println("HTTP/1.1 200 OK");
         client->println("Content-type:text/html");
@@ -901,7 +923,7 @@ void doServer(WiFiClient *client)
         client->println("<div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
         client->println("    <div class=\"card\">");
-        client->println("        <form action=\"/byworker/\" method=\"GET\">");
+        client->println("        <form action=\"/byemployee/\" method=\"GET\">");
         client->println("        <p>");
         client->println("            <label for=\"calendar\">Select month and year for report </label>");
         client->printf("            <input type=\"month\" id=\"date\" name=\"date\" value=\"%04d-%02d\">\r\n",
@@ -961,7 +983,7 @@ void doServer(WiFiClient *client)
         }
         else
         {
-            client->print("No workers in the database!");
+            client->print("No employees in the database!");
             client->println("</label><br>");
         }
         client->println("            <label for=\"dataRemoval\">Remove all employee data from the storage? </label>");
@@ -1147,10 +1169,10 @@ void doServer(WiFiClient *client)
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
-        client->println("        <a href=\"/addworker\"> <button>Add worker</button> </a>");
-        client->println("        <a href=\"/remove\"> <button>Remove worker</button> </a>");
-        client->println("        <a href=\"/monthly\"> <button>Monthly review by worker</button></a>");
-        client->println("        <a href=\"/byworker\"> <button>Workers review by month</button> </a>");
+        client->println("        <a href=\"/employee\"> <button>Add employee</button> </a>");
+        client->println("        <a href=\"/remove\"> <button>Remove employee</button> </a>");
+        client->println("        <a href=\"/monthly\"> <button>Monthly review by employee</button></a>");
+        client->println("        <a href=\"/byemployee\"> <button>Employees review by month</button> </a>");
         client->println("      </div>");
         client->println("    </div>");
         client->println("  </div>");

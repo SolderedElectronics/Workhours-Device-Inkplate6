@@ -13,7 +13,7 @@
 
 // Folder names and structure on micro SD Card
 #define DEFAULT_FOLDER_NAME "SolderedTimeLoggerDevice"
-#define DEFAULT_IMAGE_NAME  "defaultImage.bmp"
+#define DEFAULT_IMAGE_NAME  "defaultImage.png"
 #define DEFAULT_IMAGE_PATH  DEFAULT_FOLDER_NAME "/" DEFAULT_IMAGE_NAME
 
 // All departments. Add if needed. Do not modify alreday added.

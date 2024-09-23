@@ -81,7 +81,10 @@ Also, baud rate switches must be set in next position (to set a baud rate of 576
 Connect P1-7 of the GPIO EXPANDER 1 to the (+) of the magnetic buzzer. Other end of the buzzer connect to the ground. To protect GPIO expander pin, connect Schottky Diode parallel to the buzezr, with the anode of the diode connected to the GND.
 
 ## Notes
-This is updated version, so files from previous version won't work. Main differences are:
-- `;` is replaced by `,` is CVS file
-- Removed unnecessary spaces from CVS files
-- Removed unnecessary `,` or `;` at the end
+- This is updated version, so files from previous version won't work. Main differences are:
+  - `;` is replaced by `,` is CVS file
+  - Removed unnecessary spaces from CVS files
+  - Removed unnecessary `,` or `;` at the end
+  - workers.csv is now called employees.csv
+  - images are in .png format
+- Web pages are cached! If web page is changed, use CTRL+F5 in Chromium Browser to clear the cache. This needs to be done for every web page on server.

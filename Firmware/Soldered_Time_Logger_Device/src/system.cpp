@@ -27,6 +27,7 @@ void buzzer(Inkplate *_display, uint8_t n, int _ms)
     }
 }
 
+// Device system initialization. Connects to the WiFi, starts the server, starts mDNS, gets the time from API, initializes logger library.
 int deviceInit(Inkplate *_display, char *_ssid, char *_password, WiFiServer *_server, LinkedList *_myList, Logging *_logger, IPAddress _localIP, IPAddress _gateway, IPAddress _subnet, IPAddress _primaryDNS, IPAddress _secondaryDNS)
 {
     // Initialize serial communication for debug.
@@ -99,7 +100,7 @@ int deviceInit(Inkplate *_display, char *_ssid, char *_password, WiFiServer *_se
     _server->begin();
     _display->print("\nGetting the time from API service ");
     _display->partialUpdate();
-    if (!fetchTime(_display))
+    if (!updateTime(_display, 10, 500ULL))
         errorDisplay(_display, "Failed!", false, true);
 
     // Initialize library for logging functions. Send address of the SdFat object and Linked List object as parameters
@@ -168,4 +169,27 @@ int fetchTime(Inkplate *_display)
 
     // If you got this far, that means clock is set, return success.
     return 1;
+}
+
+// Try to get time from API in multiple attempts.
+bool updateTime(Inkplate *_display, uint8_t _retries, uint16_t _delay)
+{
+    // Try to get the time. If failed, try again multiple times.
+    for (int i = 0; i < _retries; i++)
+    {
+        // Try to get the time from the API.
+        if (!fetchTime(_display))
+        {
+            // If failed, wait a little bit before next attempt.
+            delay(_delay);
+        }
+        else
+        {
+            // Got the time? Return success!
+            return true;
+        }
+    }
+
+    // Still no time? Return false!
+    return false;
 }

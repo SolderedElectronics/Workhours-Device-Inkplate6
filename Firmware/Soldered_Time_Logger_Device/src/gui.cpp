@@ -124,7 +124,7 @@ void unknownTag(Inkplate *_display, unsigned long long _tagID, bool *_changeNeed
     _display->setCursor(50, 50);
     _display->print("Tag ID ");
     _display->print(_tagID);
-    _display->print(" is not assigned to any worker");
+    _display->print(" is not assigned to any employee");
     *_menuTimeout = millis();
     *_changeNeeded = 1;
 }
@@ -211,5 +211,5 @@ void drawIPAddress(Inkplate *_display, int _x, int _y)
     _display->print(WiFi.localIP());
 
     // Print also mDNS.
-    _display->printf(" or %s.localhost/", ESP32_MDNS_NAME);
+    _display->printf(" or %s.local/", ESP32_MDNS_NAME);
 }

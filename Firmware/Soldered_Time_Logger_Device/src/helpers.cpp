@@ -1,5 +1,12 @@
 #include "helpers.h"
 
+#include <stdio.h>
+#include <string.h>
+#include <sys\time.h>
+#include <time.h>
+#include "Inkplate.h"
+#include "defines.h"
+
 // Calculates the start and stop epochs of the current month
 int calculateMonthEpochs(int32_t _currentEpoch, int32_t *_startWeekEpoch, int32_t *_endWeekEpoch)
 {
@@ -217,13 +224,13 @@ int sendIcon(WiFiClient *_client, SdFat *_sd)
         return 0;
     }
 
-    // Change dir to working directory of this device
+    // Change dir to working directory of this device.
     if (!_sd->chdir(DEFAULT_FOLDER_NAME))
     {
         return 0;
     }
 
-    // Now try to open favicon.ico file
+    // Now try to open favicon.ico file.
     if (!_myFile.open("favicon.ico"))
     {
         return 0;
@@ -237,19 +244,19 @@ int sendIcon(WiFiClient *_client, SdFat *_sd)
     // Read it!
     _myFile.read(_buffer, _myFile.fileSize());
 
-    // Send it to the client
+    // Send it to the client.
     _client->write(_buffer, _myFile.fileSize());
 
-    // Close the file
+    // Close the file.
     _myFile.close();
 
-    // Free the memory
+    // Free the memory.
     free(_buffer);
 
-    // Go back to the root dir
+    // Go back to the root dir.
     _sd->chdir(true);
 
-    // Return succ
+    // Return success.
     return 1;
 }
 
@@ -275,14 +282,9 @@ void removeEmployeeData(SdFat *_sd, employeeData *_employee)
     snprintf(_folderName, sizeof(_folderName), "%s%s%llu", _employee->firstName, _employee->lastName,
              (unsigned long long)(_employee->ID));
 
-    Serial.print(_folderName);
-
     // Remove the folder
     _myFile.open(_folderName);
-    if (!_myFile.rmRfStar())
-    {
-        Serial.println("Could not remove the folder!");
-    }
+    _myFile.rmRfStar();
 
     // Close the file.
     _myFile.close();
@@ -291,38 +293,4 @@ void removeEmployeeData(SdFat *_sd, employeeData *_employee)
     _sd->chdir(true);
 
     return;
-}
-
-void drawInternetInfo(Inkplate *_ink)
-{
-    // Clear the part of the screen for the icon.
-    _ink->fillRect(0, 0, noWifiSymbol_w, noWifiSymbol_h, WHITE);
-    _ink->fillRect(60, 0, wifiSignal_w, wifiSignal_h, WHITE);
-
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        // Draw the icon for wifi.
-        _ink->drawBitmap(0, 0, wifiSymbol, wifiSymbol_w, wifiSymbol_h, BLACK);
-
-        // Draw the symbol icon
-        int _mappedSignal = map(WiFi.RSSI(), -127, 0, 0, 5);
-        _ink->drawBitmap(60, 0, wifiSignal[_mappedSignal], wifiSignal_w, wifiSignal_h, BLACK);
-    }
-    else
-    {
-        // Draw the icon for no wifi.
-        _ink->drawBitmap(0, 0, noWifiSymbol, noWifiSymbol_w, noWifiSymbol_h, BLACK);
-    }
-}
-
-void drawIPAddress(Inkplate *_ink, int _x, int _y)
-{
-    // Set normal 5x7 font
-    _ink->setFont();
-
-    // Set the cursor
-    _ink->setCursor(_x, _y);
-
-    // Printout the IP address
-    _ink->print(WiFi.localIP());
 }

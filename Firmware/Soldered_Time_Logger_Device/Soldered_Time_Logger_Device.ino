@@ -1,34 +1,19 @@
-#include "Inkplate.h" //Include Inkplate library to the sketch
-#include "esp_wifi.h"
-#include "include/Inter12pt7b.h"
-#include "include/Inter16pt7b.h"
-#include "include/Inter8pt7b.h"
-#include "include/mainUI.h"
-#include <ArduinoJson.h>
-#include <sys\time.h>
-#include <time.h>
-
-#include "defines.h"
-#include "helpers.h"
-#include "linkedList.h"
-#include "logging.h"
+#include "src/system.h"
+#include "Inkplate.h"
+#include "src/linkedList.h"
+#include "src/logging.h"
+#include "src/SourceSansPro_Regular16pt7b.h"
+#include "src/helpers.h"
+#include "src/system.h"
+#include "src/gui.h"
+#include "src/defines.h"
+#include "src/mainUI.h"
+#include "ArduinoJson.h"
 
 Inkplate display(INKPLATE_1BIT); // Create an object on Inkplate library and also set library into 1 Bit mode (BW)
 WiFiServer server(80);
 LinkedList myList;
 Logging logger;
-
-// Change WiFi and IP data to suit your setup.
-char ssid[] = "Soldered";
-char pass[] = "dasduino";
-// Set your Static IP address
-IPAddress localIP(192, 168, 71, 99); // IP address should be set to desired address
-// Set your Gateway IP address
-// Gateway address (in most cases it's the first address of selected IP addreess subnet)
-IPAddress gateway(192, 168, 71, 1);
-IPAddress subnet(255, 255, 255, 0);   // Subnet mask
-IPAddress primaryDNS(192, 168, 71, 1); // Primary DNS (use router / ISP DNS as primary one)
-IPAddress secondaryDNS(8, 8, 4, 4);   // Secondary DNS (use google as secondary one)
 
 // Global variables.
 // Used for menu refreshing.
@@ -42,101 +27,29 @@ unsigned long rtcUpdate = 0;
 
 void setup()
 {
-    Serial.begin(115200);
-    Serial2.begin(57600, SERIAL_8N1, 39, -1); // Software Serial for RFID
-    display.begin();                          // Init Inkplate library (you should call this function ONLY ONCE)
-    display.clearDisplay();                   // Clear frame buffer of display
+    // Init Inkplate library (you should call this function ONLY ONCE)
+    display.begin();
+
+    // Clear frame buffer of display
+    display.clearDisplay();
+
+    // Text settings.
     display.setTextColor(BLACK, WHITE);
     display.display(); // Put clear image on display
     display.sdCardInit();
-    display.setFont(&Inter16pt7b);
+    display.setFont(&SourceSansPro_Regular16pt7b);
     display.setCursor(0, 30);
-    display.pinModeIO(BUZZER_PIN, OUTPUT, IO_INT_ADDR);
 
-    display.print("Checking microSD Card");
-    display.partialUpdate(0, 1);
-    if (!sd.begin(15, SD_SCK_MHZ(10)))
-    {
-        BUZZ_SYS_ERROR;
-        errorDisplay();
-        display.partialUpdate(0, 1);
-        while (1)
-            ;
-    }
-
-    display.print("\nConfiguring IP Adresses");
-    display.partialUpdate(0, 0);
-
-    // High current consumption due WiFi and epaper activity causes reset of the ESP32. So wait a little bit.
-    delay(1000);
-
-    // Confingure IP Adress, subnet, DNS.
-    if (!WiFi.config(localIP, gateway, subnet, primaryDNS, secondaryDNS))
-    {
-        display.println("\nSTA Failed to configure, please reset Inkplate! If error keeps to repeat, try to cnofigure "
-                        "STA in different way or use another IP address");
-    }
-
-    WiFi.mode(WIFI_STA);
-    esp_wifi_set_ps(WIFI_PS_NONE);
-    WiFi.begin(ssid, pass);
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        WiFi.reconnect();
-
-        delay(5000);
-
-        int cnt = 0;
-        display.print("\nWaiting for WiFi to connect");
-        display.partialUpdate(0, 1);
-        while ((WiFi.status() != WL_CONNECTED))
-        {
-            // Prints a dot every second that wifi isn't connected
-            display.print(F("."));
-            display.partialUpdate(0, 1);
-            delay(1000);
-            ++cnt;
-
-            if (cnt == 25)
-            {
-                display.println("Can't connect to WIFI, restart initiated.");
-                display.partialUpdate(0, 1);
-                delay(100);
-                ESP.restart();
-            }
-        }
-    }
-
-    // Start server
-    display.print("\nStarting the web server");
-    display.partialUpdate();
-    server.begin();
-    display.print("\nGetting the time from timeAPI...");
-    display.partialUpdate();
-    if (!fetchTime())
-    {
-        display.print("Failed! Please reset the device.");
-        display.partialUpdate();
-        BUZZ_SYS_ERROR;
-        while (true)
-            ;
-    }
-
-    // Initialize library for logging functions. Send address of the SdFat object and Linked List object as parameters
-    // (needed by the library).
-    display.print("\nReading data from SD card");
-    display.partialUpdate();
-    logger.begin(&sd, &myList, &display);
+    // Initialize the device system.
+    deviceInit(&display, ssid, pass, &server, &myList, &logger, localIP, gateway, subnet, primaryDNS, secondaryDNS);
 
     // Be ready for the next daily report calculation
     logger.calculateNextDailyReport();
 
-    Serial.println(WiFi.localIP());
-
     // Draw the main screen
     display.clearDisplay();
-    mainDraw();
-    changeNeeded = 1;
+    mainDraw(&display, wdayName, monthName);
+    display.display();
 }
 
 void loop()
@@ -154,7 +67,7 @@ void loop()
     }
     else
     {
-        // If connection to Wi Fi is lost then reconnect
+        // If connection to Wi-Fi is lost then reconnect.
         WiFi.reconnect();
     }
 
@@ -162,53 +75,56 @@ void loop()
     if (Serial2.available())
     {
         // Get data from RFID reader and conver it into integer (Tag data is sent as ASCII coded numbers).
-        uint64_t tag = logger.getTagID();
-
-        // If the tag is successfully read, check if there is employee with that tag.
-        struct employeeData employee;
-        int result = logger.addLog(tag, display.rtcGetEpoch(), employee);
-
-        if (result != LOGGING_TAG_ERROR)
+        // Check if the data is vaild.
+        uint64_t tag = 0;
+        if (logger.getTagID(&Serial2, &tag))
         {
-            // If everything went ok, read the result.
-            // If it's login, show login screen with name, last name, department, tagID etc.
-            if (result == LOGGING_TAG_LOGIN)
-                login(&employee);
+            // If the tag is successfully read, check if there is employee with that tag.
+            struct employeeData employee;
+            int result = logger.addLog(tag, display.rtcGetEpoch(), employee);
 
-            // If the tag if already logged in the span of 10 minutes, just ingore it and show error message
-            if (result == LOGGING_TAG_10MIN)
-                alreadyLogged(tag);
-
-            // If it's logout, show logout screen with weekday work hours and daily work hours.
-            if (result == LOGGING_TAG_LOGOUT)
+            if (result != LOGGING_TAG_ERROR)
             {
-                logout(&employee, logger.getEmployeeDailyHours(tag, (int32_t)display.rtcGetEpoch()),
-                       logger.getEmployeeWeekHours(tag, (int32_t)display.rtcGetEpoch()));
+                // If everything went ok, read the result.
+                // If it's login, show login screen with name, last name, department, tagID etc.
+                if (result == LOGGING_TAG_LOGIN)
+                    login(&display, &employee, &changeNeeded, &menuTimeout);
+
+                // If the tag if already logged in the span of 10 minutes, just ingore it and show error message
+                if (result == LOGGING_TAG_10MIN)
+                    alreadyLogged(&display, tag, &changeNeeded, &menuTimeout);
+
+                // If it's logout, show logout screen with weekday work hours and daily work hours.
+                if (result == LOGGING_TAG_LOGOUT)
+                {
+                    logout(&display, &employee, logger.getEmployeeDailyHours(tag, (int32_t)display.rtcGetEpoch()),
+                           logger.getEmployeeWeekHours(tag, (int32_t)display.rtcGetEpoch()), &changeNeeded, &menuTimeout);
+                }
+
+                // If tag is not in the list, show error message!
+                if (result == LOGGING_TAG_NOT_FOUND)
+                    unknownTag(&display, tag, &changeNeeded, &menuTimeout);
+            }
+            else if (result == LOGGING_TAG_ERROR)
+            {
+                // Show error message
+                tagLoggingError(&display, &changeNeeded, &menuTimeout);
             }
 
-            // If tag is not in the list, show error message!
-            if (result == LOGGING_TAG_NOT_FOUND)
-                unknownTag(tag);
-        }
-        else if (result == LOGGING_TAG_ERROR)
-        {
-            // Show error message
-            tagLoggingError();
-        }
+            // Wait until there is no more data from the Serial (from the RFID tag reader).
+            // Otherwise it can detect RFID Tag read multiple times in a row.
+            // Solution is to wait until RFID stop sending the data. And also, flush the serial buffer.
+            unsigned long rfidTimeout = millis();
 
-        // Wait until there is no more data from the Serial (from the RFID tag reader).
-        // Otherwise it can detect RFID Tag read multiple times in a row.
-        // Solution is to wait until RFID stop sending the data. And also, flush the serial buffer.
-        unsigned long rfidTimeout = millis();
-
-        while ((unsigned long)(millis() - rfidTimeout) < 500UL)
-        {
-            if (Serial2.available())
+            while ((unsigned long)(millis() - rfidTimeout) < 500UL)
             {
-                rfidTimeout = millis();
-                while (Serial2.available())
+                if (Serial2.available())
                 {
-                    Serial2.read();
+                    rfidTimeout = millis();
+                    while (Serial2.available())
+                    {
+                        Serial2.read();
+                    }
                 }
             }
         }
@@ -219,14 +135,14 @@ void loop()
     {
         menuTimeout = 0;
         display.clearDisplay();
-        mainDraw();
+        mainDraw(&display, wdayName, monthName);
         changeNeeded = 1;
     }
     else if ((menuTimeout == 0) &&(unsigned long)(millis() - periodicRefresh) >= 60000UL) // Periodically refresh screen every 60 seconds.
     {
         periodicRefresh = millis();
         display.clearDisplay();
-        mainDraw();
+        mainDraw(&display, wdayName, monthName);
         changeNeeded = 1;
 
         // Update the RTC data.
@@ -258,7 +174,7 @@ void loop()
     if (logger.isDailyReport())
     {
         // Show the screen
-        dailyReportScreen();
+        dailyReportScreen(&display, &changeNeeded, &menuTimeout);
         display.display();
 
         // Make a daily report for all employees
@@ -268,274 +184,14 @@ void loop()
         logger.calculateNextDailyReport();
 
         // Update the time.
-        fetchTime();
+        fetchTime(&display);
 
         // Wait for 10 seconds (daily report is activated 10 seconds before midnight).
         delay(10000);
     }
 
     // Added for RTOS. Otherwise web server sometimes does not respond.
-    delay(50);
-}
-
-// Get the time from the web (time.api). If everything went ok, Inkplate RTC will be set to the correct time.
-// Otherwise, funciton will return 0 and clock won't be set.
-int fetchTime()
-{
-    WiFiClientSecure client;
-    DynamicJsonDocument _doc(500);
-    DeserializationError _err;
-    char _temp[500];
-    struct tm _t;
-    int32_t _epoch;
-    int i = 0;
-    char *_jsonStart = NULL;
-
-    client.setInsecure(); // Skip verification
-    if (client.connect("timeapi.io", 443))
-    {
-        client.println("GET /api/Time/current/zone?timeZone=Europe/Zagreb HTTP/1.1");
-        client.println("Host: timeapi.io");
-        client.println("Connection: close");
-        client.println();
-
-        // Skip header.
-        while (client.connected())
-        {
-            String line = client.readStringUntil('\n');
-            if (line == "\r")
-            {
-                break;
-            }
-        }
-
-        // Read and store everything after the header
-        int i = 0;
-        memset(_temp, 0, sizeof(_temp));
-        while (client.available())
-        {
-            _temp[i++] = client.read();
-        }
-        client.stop();
-
-        // Find the start of the JSON file
-        _jsonStart = strchr(_temp, '{');
-        if (_jsonStart == NULL)
-            return 0;
-
-        // Deserialize the JSON file.
-        _err = deserializeJson(_doc, _jsonStart);
-
-        // Deserilization error=? Return error.
-        if (_err)
-        {
-            return 0;
-        }
-
-        // No entry in JSON called "seconds"? Return error.
-        if (!_doc.containsKey("seconds"))
-        {
-            return 0;
-        }
-
-        // Get the clock!
-        _t.tm_year = (int)_doc["year"] - 1900;
-        _t.tm_mon = (int)_doc["month"] - 1;
-        _t.tm_mday = _doc["day"];
-        _t.tm_hour = _doc["hour"];
-        _t.tm_min = _doc["minute"];
-        _t.tm_sec = _doc["seconds"];
-        _t.tm_isdst = 0;
-        _epoch = mktime(&_t);
-
-        // Set it on Inkplate RTC.
-        display.rtcSetEpoch(_epoch);
-        display.rtcGetRtcData();
-        return 1;
-    }
-
-    // Stop the client (just in case).
-    client.stop();
-
-    // If you got this far, that means something is wrong. Return error.
-    return 0;
-}
-
-// Show login screen.
-void login(struct employeeData *_w)
-{
-    // Code for login screen
-
-    // Make a sound.
-    BUZZ_LOG;
-
-    // Array for the image path on the microSD card.
-    char _imagePath[200];
-
-    // Write the data on the display.
-    display.setTextSize(1);
-    display.setFont(&Inter16pt7b);
-    display.setCursor(350, 30);
-    display.clearDisplay();
-    display.print("First name:  ");
-    display.print(_w->firstName);
-    display.setCursor(350, 60);
-    display.print("Last name:  ");
-    display.print(_w->lastName);
-    display.setCursor(350, 90);
-    display.print("ID:  ");
-    display.print(_w->ID);
-    display.setCursor(350, 120);
-    display.print(_w->department);
-    display.setCursor(350, 190);
-    display.print("Login");
-
-    // Create path to the image on the microSD card
-    createImagePath((*_w), _imagePath);
-
-    // Try to display it. If not, use default image.
-    if (!(display.drawImage(_imagePath, 5, 5, 1, 1)))
-    {
-        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 1);
-    }
-
-    // Set variables for screen update and timeout.
-    menuTimeout = millis();
-    changeNeeded = 1;
-}
-
-// Show logout screen.
-void logout(struct employeeData *_w, uint32_t _dailyHours, uint32_t _weekHours)
-{
-    // Code for logout screen
-
-    // Make a sound.
-    BUZZ_LOG;
-
-    // Array for the image path on the microSD card.
-    char _imagePath[200];
-
-    // Write the data on the display.
-    display.setTextSize(1);
-    display.setFont(&Inter16pt7b);
-    display.setCursor(350, 30);
-    display.clearDisplay();
-    display.print("Name:  ");
-    display.print(_w->firstName);
-    display.setCursor(350, 60);
-    display.print("Last name:  ");
-    display.print(_w->lastName);
-    display.setCursor(350, 90);
-    display.print("ID:  ");
-    display.print(_w->ID);
-    display.setCursor(350, 120);
-    display.print(_w->department);
-    display.setCursor(350, 150);
-    display.printf("Daily: %2d:%02d:%02d", _dailyHours / 3600, _dailyHours / 60 % 60, _dailyHours % 60);
-    display.setCursor(350, 180);
-    display.printf("Weekly: %2d:%02d:%02d", _weekHours / 3600, _weekHours / 60 % 60, _weekHours % 60);
-    display.setCursor(350, 250);
-    display.print("Logout");
-
-    // Create path to the image on the microSD card
-    createImagePath((*_w), _imagePath);
-
-    // Try to display it. If not, use default image.
-    if (!(display.drawImage(_imagePath, 5, 5, 1, 1)))
-    {
-        display.drawImage(DEFAULT_IMAGE_PATH, 5, 5, 1, 1);
-    }
-
-    // Set variables for screen update and timeout.
-    menuTimeout = millis();
-    changeNeeded = 1;
-}
-
-// Show the screen if some one is already logged.
-void alreadyLogged(uint64_t _tag)
-{
-    BUZZ_LOG_ERROR;
-    display.clearDisplay();
-    display.setTextSize(3);
-    display.setFont(&Inter16pt7b);
-    display.setCursor(280, 100);
-    display.print("No can't do");
-    display.setTextSize(1);
-    display.setCursor(50, 500);
-    display.print("You already scanned your tag in last 10 minutes!");
-    menuTimeout = millis();
-    changeNeeded = 1;
-}
-
-// Show error screen for unknown tag.
-void unknownTag(unsigned long long _tagID)
-{
-    BUZZ_LOG_ERROR;
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setFont(&Inter16pt7b);
-    display.setCursor(50, 50);
-    display.print("Tag ID ");
-    display.print(_tagID);
-    display.print(" is not assigned to any worker");
-    menuTimeout = millis();
-    changeNeeded = 1;
-}
-
-// Show this screen if something weird happen to the logging.
-void tagLoggingError()
-{
-    BUZZ_LOG_ERROR;
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setFont(&Inter16pt7b);
-    display.setCursor(50, 50);
-    display.print("Logging failed! Check with the gazda for more info");
-    menuTimeout = millis();
-    changeNeeded = 1;
-}
-
-// This screen will appear if the microSD card is missing while loging in or loging out.
-void errorDisplay()
-{
-    BUZZ_SYS_ERROR;
-    display.setTextSize(1);
-    display.setFont(&Inter16pt7b);
-    display.setCursor(0, 30);
-    display.clearDisplay();
-    display.print("\nError occured. No SD card inserted. Please insert SD Card. If you don't have SD card, please "
-                  "contact gazda.");
-    menuTimeout = millis();
-    changeNeeded = 1;
-}
-
-// Screen when daily report is active
-void dailyReportScreen()
-{
-    display.setTextSize(1);
-    display.setFont(&Inter16pt7b);
-    display.setCursor(0, 30);
-    display.clearDisplay();
-    display.print("Creating daily report, please wait!");
-    menuTimeout = millis();
-}
-
-// Funcion for making a sound. Buzzer must be connected on the IO expaned GPIO15 pin with the MOSFET)
-// Do not connect buzzer directly to the IO expander!
-void buzzer(uint8_t n, int _ms)
-{
-    for (int i = 0; i < n; i++)
-    {
-        unsigned long _timer1 = millis();
-        while ((unsigned long)(millis() - _timer1) < _ms)
-        {
-            display.digitalWriteIO(BUZZER_PIN, HIGH, IO_INT_ADDR);
-            display.digitalWriteIO(BUZZER_PIN, LOW, IO_INT_ADDR);
-        }
-        _timer1 = millis();
-        while ((unsigned long)(millis() - _timer1) < _ms)
-            ;
-    }
+    delay(100);
 }
 
 // Function that handles all requests for the client.
@@ -740,31 +396,31 @@ void doServer(WiFiClient *client)
             free(ps);
         }
     }
-    else if (strstr(buffer, "addworker/?"))
+    else if (strstr(buffer, "addemployee/?"))
     {
         client->println("HTTP/1.1 200 OK");
         client->println("Content-type:text/html");
         client->println("Connection: close");
         client->println();
         unsigned long long tempID = 0;
-        char tempFName[50];
-        char tempLName[50];
-        char tempImage[128];
-        char tempDepartment[100];
+        char tempFName[101];
+        char tempLName[101];
+        char tempImage[129];
+        char tempDepartment[101];
         char tempKey[51];
-        char *temp = strstr(buffer, "addworker/?");
+        char *temp = strstr(buffer, "addemployee/?");
 
         client->println("<!DOCTYPE html>");
         client->println(" <html>");
         client->println(" <head>");
-        client->println("   <title>Worktime</title>");
+        client->println("   <title>Soldered Time Logger Device</title>");
         client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
         client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
         client->println(" </head>");
         client->println(" <body>");
         client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("  </div>");
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
@@ -772,20 +428,16 @@ void doServer(WiFiClient *client)
 
         // Parse the input data. There should be 6 items parsed.
         int _res =
-            sscanf(temp, "addworker/?name=%[^'&']&lname=%[^'&']&tagID=%llu&department=%[^'&']&image=%[^'&']&key=%s",
+            sscanf(temp, "addemployee/?name=%[^'&']&lname=%[^'&']&tagID=%llu&department=%[^'&']&image=%[^'&']&key=%s",
                    tempFName, tempLName, &(tempID), tempDepartment, tempImage, tempKey);
 
-        // Fix http text for all string inputs (covert HEX into ASCII, for example '# sign is in HTTp response %23 -
+        // Fix http text for all string inputs (covert HEX into ASCII, for example '# sign is in HTTP response %23 -
         // 0x23 is in ASCII '#').
         fixHTTPResponseText(tempFName);
         fixHTTPResponseText(tempLName);
         fixHTTPResponseText(tempDepartment);
         fixHTTPResponseText(tempImage);
         fixHTTPResponseText(tempKey);
-
-        Serial.println(temp);
-        Serial.printf("Add worker: Name: %s Last name: %s ID; %llu Depart: %s Image: %s\r\n", tempFName, tempLName,
-                      tempID, tempDepartment, tempImage);
 
         // If the data is ok and key is vaild, add the employee.
         if (_res == 6 && strstr(tempKey, SECRET_KEY) != NULL)
@@ -807,14 +459,14 @@ void doServer(WiFiClient *client)
         }
 
         client->println("        <a href=\"/\"> <button>Home</button> </a>");
-        client->println("        <a href=\"/addworker\"> <button>Add another Employee</button> </a>");
+        client->println("        <a href=\"/employee\"> <button>Add another Employee</button> </a>");
         client->println("      </div>");
         client->println("    </div>");
         client->println("  </div>");
         client->println(" </body>");
         client->println("</html>");
     }
-    else if (strstr(buffer, "/addworker"))
+    else if (strstr(buffer, "/employee"))
     {
         client->println("HTTP/1.1 200 OK");
         client->println("Content-type:text/html");
@@ -822,41 +474,69 @@ void doServer(WiFiClient *client)
         client->println("Connection: close");
         client->println();
         client->println("<!DOCTYPE html>");
-        client->println(" <html>");
-        client->println(" <head>");
-        client->println("   <title>Worktime</title>");
+        client->println("<html>");
+        client->println("<head>");
+        client->println("   <title>Soldered Time Logger Device</title>");
         client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
         client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
-        client->println(" </head>");
-        client->println(" <body>");
+        client->println("   <script>");
+        client->println("       function clearTextOnFocus(input) {");
+        client->println("           if (input.value === input.defaultValue) {");
+        client->println("               input.value = '';"); 
+        client->println("           }");
+        client->println("       }");
+
+        client->println("       function restoreTextOnBlur(input) {");
+        client->println("           if (input.value === '') {");
+        client->println("               input.value = input.defaultValue;");
+        client->println("           }");
+        client->println("       }");
+
+        client->println("       function checkForPng(input) {");
+        client->println("           if (!input.value.toLowerCase().endsWith('.png')) {");
+        client->println("               alert('Wrong image format (use PNG) or extension is missing!');");
+        client->println("               return false;");
+        client->println("           }");
+        client->println("           return true;");
+        client->println("       }");
+        client->println("   </script>");
+        client->println("</head>");
+
+        client->println("<body>");
         client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("  </div>");
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
-        client->println("        <form action=\"/addworker/\" method=\"GET\">");
+        client->println("        <form action=\"/addemployee/\" method=\"GET\" onsubmit=\"return checkForPng(document.getElementById('image'))\">");
         client->println("          <p>");
         client->println("            <label for=\"name\">First name</label>");
-        client->println("            <input type=\"text\" id =\"name\" name=\"name\"><br>");
+        client->println("            <input type=\"text\" id =\"name\" name=\"name\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\" required><br>");
         client->println("            <label for=\"lname\">Last Name</label>");
-        client->println("            <input type=\"text\" id =\"lname\" name=\"lname\"><br>");
+        client->println("            <input type=\"text\" id =\"lname\" name=\"lname\" onkeydown=\"return /[a-z0-9\\.\\-\\&\\ ]/i.test(event.key)\" required><br>");
         client->println("            <label for=\"tagID\">ID of RFID tag</label>");
-        client->println("            <input type=\"number\" id =\"tagID\" name=\"tagID\"><br>");
+        client->println("            <input type=\"number\" id =\"tagID\" name=\"tagID\" required><br>");
         client->println("            <label for=\"department\">Department</label>");
-        client->println("            <input type=\"text\" id =\"department\" name=\"department\"><br>");
+        client->println("            <select id=\"department\" name=\"department\" required>");
+        client->println("                <option value=\"\" disabled selected>Select one</option>");
+        for (int i = 0; i < numberOfDepartments; i++) {
+            client->printf("                <option value=\"%s\">%s</option>\r\n", departments[i], departments[i]);
+        }
+        client->println("            </select><br>");
         client->println("            <label for=\"image\">Image name</label>");
-        client->println("            <input type=\"text\" id =\"image\" name=\"image\"><br>");
+        client->printf("             <input type=\"text\" id =\"image\" name=\"image\" onkeydown=\"return /[a-z0-9\\.\\-\\_\\&\\ ]/i.test(event.key)\" value=\"%s\"\r\n", DEFAULT_IMAGE_NAME);
+        client->println("                         onfocus=\"clearTextOnFocus(this)\" onblur=\"restoreTextOnBlur(this)\"><br>");
         client->println("            <label for=\"password\">Password</label>");
-        client->println("            <input type=\"password\" id =\"key\" name=\"key\"><br>");
-        client->println("            <input type =\"submit\" value =\"Add worker\">");
+        client->println("            <input type=\"password\" id =\"key\" name=\"key\" required><br>");
+        client->println("            <input type =\"submit\" value =\"Add employee\">");
         client->println("        </form>");
         client->println("        <a href=\"/\"> <button>Back</button> </a>");
         client->println("      </div>");
         client->println("    </div>");
         client->println("  </div>");
-        client->println(" </body>");
+        client->println("</body>");
         client->println("</html>");
     }
     else if (strstr(buffer, "/favicon.ico"))
@@ -878,14 +558,14 @@ void doServer(WiFiClient *client)
         client->println("<!DOCTYPE html>");
         client->println(" <html>");
         client->println(" <head>");
-        client->println("   <title>Worktime</title>");
+        client->println("   <title>Soldered Time Logger Device</title>");
         client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
         client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
         client->println(" </head>");
         client->println(" <body>");
         client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("  </div>");
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
@@ -916,9 +596,9 @@ void doServer(WiFiClient *client)
                 }
                 myList.removeEmployee(_idToRemove);
                 logger.updateEmployeeFile();
-                client->println("        <p>Worker removed successfully!</p>");
+                client->println("        <p>Employee removed successfully!</p>");
                 client->println("        <a href=\"/\"> <button>Home</button> </a>");
-                client->println("        <a href=\"/remove\"> <button>Remove another worker</button> </a>");
+                client->println("        <a href=\"/remove\"> <button>Remove another employee</button> </a>");
             }
             else
             {
@@ -935,7 +615,7 @@ void doServer(WiFiClient *client)
     else if (strstr(buffer, "/monthly/?"))
     {
         // This block of code will send the needed file to the client.
-        // It will send report file of a worker from the microSD card
+        // It will send report file of a employee from the microSD card
 
         // Try to find the start of the request
         char *startStr = strstr(buffer, "/monthly/?");
@@ -955,7 +635,7 @@ void doServer(WiFiClient *client)
             // HTTP GET req. will look something like this:
             // /monthly/?worker=[FirstName]_[LastName]_[ID]&month=[Year]-[Month]&rawData=1
             // There should me minimum 5 arguments (first name, last name, ID, Year and month, rawDataFlag is optional)
-            if (sscanf(startStr, "/monthly/?worker=%[^'_']_%[^'_']_%llu&month=%d-%d&rawData=%d", employee.firstName,
+            if (sscanf(startStr, "/monthly/?employee=%[^'_']_%[^'_']_%llu&month=%d-%d&rawData=%d", employee.firstName,
                        employee.lastName, (unsigned long long *)&(employee.ID), &year, &month, &rawDataFlag) >= 5)
             {
                 SdFile myFile;
@@ -992,7 +672,7 @@ void doServer(WiFiClient *client)
                                 unsigned long long logoutEpoch = 0;
 
                                 // Parse one line from the file
-                                if (sscanf(oneLine, "%llu; %llu", &loginEpoch, &logoutEpoch) != 0)
+                                if (sscanf(oneLine, "%llu,%llu", &loginEpoch, &logoutEpoch) != 0)
                                 {
                                     char loginEpochStr[30];
                                     char logoutEpochStr[30];
@@ -1002,7 +682,7 @@ void doServer(WiFiClient *client)
                                     createTimeStampFromEpoch(logoutEpochStr, logoutEpoch);
 
                                     // Send one line to the client.
-                                    client->printf("%s; %s;\r\n", loginEpochStr,
+                                    client->printf("%s,%s\r\n", loginEpochStr,
                                                    logoutEpoch != 0 ? logoutEpochStr : LOGGING_ERROR_STRING);
                                 }
                             }
@@ -1055,14 +735,14 @@ void doServer(WiFiClient *client)
         client->println(" </head>");
         client->println(" <body>");
         client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("  </div>");
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
         client->println("        <form action=\"/monthly/\" method=\"GET\">");
-        client->println("            <label for=\"worker\">Choose worker:</label>");
-        client->println("            <select name=\"worker\" id=\"worker\">");
+        client->println("            <label for=\"employee\">Choose employee:</label>");
+        client->println("            <select name=\"employee\" id=\"employee\">");
 
         // Get the number of the employees.
         int numberOfEmloyees = myList.numberOfElements();
@@ -1112,7 +792,7 @@ void doServer(WiFiClient *client)
         client->println(" </body>");
         client->println("</html>");
     }
-    else if (strstr(buffer, "/byworker/?"))
+    else if (strstr(buffer, "/byemployee/?"))
     {
         // If download of the file is requested, first send 200 OK.
         client->println("HTTP/1.1 200 OK");
@@ -1121,7 +801,7 @@ void doServer(WiFiClient *client)
         if (sd.begin(15, SD_SCK_MHZ(10)))
         {
             // Get the start of the response of the HTTP GET
-            char *startStr = strstr(buffer, "/byworker/?");
+            char *startStr = strstr(buffer, "/byemployee/?");
 
             // If is found, start parsing the data
             if (startStr != NULL)
@@ -1131,7 +811,7 @@ void doServer(WiFiClient *client)
                 int month;
 
                 // For successful parsing, two arguments must be provided in the HTTP GET request (year and month)
-                if (sscanf(startStr, "/byworker/?date=%d-%d", &year, &month) == 2)
+                if (sscanf(startStr, "/byemployee/?date=%d-%d", &year, &month) == 2)
                 {
                     // Now get whole daily from every employee
                     // But first get how much employees there are
@@ -1222,7 +902,7 @@ void doServer(WiFiClient *client)
             client->println("microSD Card access error!");
         }
     }
-    else if (strstr(buffer, "/byworker"))
+    else if (strstr(buffer, "/byemployee"))
     {
         client->println("HTTP/1.1 200 OK");
         client->println("Content-type:text/html");
@@ -1231,19 +911,19 @@ void doServer(WiFiClient *client)
         client->println("<!DOCTYPE html>");
         client->println("<html>");
         client->println("<head>");
-        client->println("<title>Worktime</title>");
+        client->println("<title>Soldered Time Logger Device</title>");
         client->println("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         client->println("<link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
         client->println("<link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
         client->println("</head>");
         client->println("<body>");
         client->println("<div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("</div>");
         client->println("<div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
         client->println("    <div class=\"card\">");
-        client->println("        <form action=\"/byworker/\" method=\"GET\">");
+        client->println("        <form action=\"/byemployee/\" method=\"GET\">");
         client->println("        <p>");
         client->println("            <label for=\"calendar\">Select month and year for report </label>");
         client->printf("            <input type=\"month\" id=\"date\" name=\"date\" value=\"%04d-%02d\">\r\n",
@@ -1267,14 +947,14 @@ void doServer(WiFiClient *client)
         client->println("<!DOCTYPE html>");
         client->println(" <html>");
         client->println(" <head>");
-        client->println("   <title>Worktime</title>");
+        client->println("   <title>Soldered Time Logger Device</title>");
         client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
         client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
         client->println(" </head>");
         client->println(" <body>");
         client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("  </div>");
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
@@ -1303,14 +983,14 @@ void doServer(WiFiClient *client)
         }
         else
         {
-            client->print("No workers in the database!");
+            client->print("No employees in the database!");
             client->println("</label><br>");
         }
         client->println("            <label for=\"dataRemoval\">Remove all employee data from the storage? </label>");
         client->println(
             "            <input type=\"checkbox\" id=\"dataRemoval\" name=\"dataRemoval\" value=\"1\"><br>");
         client->println("            <label for=\"password\">Password</label>");
-        client->println("            <input type=\"password\" id =\"key\" name=\"key\"><br>");
+        client->println("            <input type=\"password\" id =\"key\" name=\"key\" required><br>");
         client->println("            <input type =\"submit\" value =\"Remove\">");
         client->println("        </form>");
         client->println("        <a href=\"/\"> <button>Back</button> </a>");
@@ -1322,113 +1002,150 @@ void doServer(WiFiClient *client)
     }
     else if (strstr(buffer, "/api"))
     {
-        // API link is [PI Address]/api/getWeekHours/[TAGID]
+        // Create static ArduinoJSON document.
+        StaticJsonDocument<256> doc;
+
+        // API link is [IP Address]/api/getWeekHours/[TAGID]
         // Send response (200 OK)
         client->println("HTTP/1.1 200 OK");
-        client->println("Content-type:text/plain");
+        client->println("Content-type: application/json");
         client->println("Connection: close");
-        client->println();
 
         // This is block of code for the API interface
-        // Check what kind of data is needed (added for future add-ons)
-        if (strstr(buffer, "/getWeekHours"))
+        // Check what kind of data is needed (added for future add-ons).
+
+        // Get the start of the HTTP GET Request for the Weekly work hours.
+        char *startStr = strstr(buffer, "/getweekhours");
+        if (startStr != NULL)
         {
-            // Get the start of the HTTP GET Request
-            char *startStr = strstr(buffer, "/getWeekHours");
-
             // If the start is found, get the TAG ID
-            if (startStr != NULL)
+            unsigned long long tagID;
+
+            if (sscanf(startStr, "/getweekhours/%llu", &tagID) == 1)
             {
-                unsigned long long tagID;
+                // Get employee data by the TAG ID
+                struct employeeData *employee;
+                employee = myList.getEmployeeByID(tagID);
 
-                if (sscanf(startStr, "/getWeekHours/%llu", &tagID) == 1)
+                if (employee != NULL)
                 {
-                    // Get employee data by the TAG ID
-                    struct employeeData *employee;
-                    employee = myList.getEmployeeByID(tagID);
+                    int32_t weekHours = 0;
+                    int32_t dayHours = 0;
+                    int32_t lastLogin = 0;
+                    int32_t lastLogout = 0;
+                    int32_t lastLoginInList = 0;
+                    int32_t lastLogoutInList = 0;
 
-                    if (employee != NULL)
+                    // Arrays for timestamp
+                    char loginTimestampStr[30];
+                    char logoutTimestampStr[30];
+                    char dailyStr[30];
+                    char weeklyStr[30];
+
+                    // Get weekly working hours
+
+                    // First update the RTC
+                    display.rtcGetRtcData();
+
+                    // Get employee workhours (search employee by ID).
+                    weekHours = logger.getEmployeeWeekHours(tagID, display.rtcGetEpoch());
+                    dayHours = logger.getEmployeeDailyHours(tagID, display.rtcGetEpoch(), &lastLogin, &lastLogout);
+
+                    // Get the last log data (to check if the logout is done).
+                    int _lastLogFlag = logger.findLastLog(employee, &lastLoginInList, &lastLogoutInList);
+
+                    // _lastLogFlag = 0 -> microSD card ok, but no login data.
+                    // _lastLogFlag = 1 -> microSD card ok & login file has been found.
+                    // _lastLogFlag = -1 -> microSD card error.
+                    if (_lastLogFlag)
                     {
-                        int32_t weekHours = 0;
-                        int32_t dayHours = 0;
-                        int32_t lastLogin = 0;
-                        int32_t lastLogout = 0;
-                        int32_t lastLoginInList = 0;
-                        int32_t lastLogoutInList = 0;
+                        // Make a JSON.
+                        doc["firstName"] = employee->firstName;
+                        doc["lastName"] = employee->lastName;
+                        doc["tagId"] = String(tagID);
+                        doc["department"] = employee->department;
 
-                        // Arrays for timestamp
-                        char loginTimestampStr[30];
-                        char logoutTimestampStr[30];
-
-                        // Get weekly working hours
-
-                        // First update the RTC
-                        display.rtcGetRtcData();
-
-                        // Get employee workhours (search employee by ID).
-                        weekHours = logger.getEmployeeWeekHours(tagID, display.rtcGetEpoch());
-                        dayHours = logger.getEmployeeDailyHours(tagID, display.rtcGetEpoch(), &lastLogin, &lastLogout);
-
-                        // Get the last log data (to check if the logout is done)
-                        if (logger.findLastLog(employee, &lastLoginInList, &lastLogoutInList))
+                        // Send data to the client. Note that is different calculation if logout is done.
+                        if (lastLogoutInList == 0 && lastLoginInList != 0)
                         {
-                            // Send data to the client. Note that is different calculation if logout is done.
-                            if (lastLogoutInList == 0 && lastLoginInList != 0)
-                            {
-                                // Add current time to the dayhours and weekhours (because logout is not done yet)
-                                dayHours += ((int32_t)(display.rtcGetEpoch()) - lastLoginInList);
-                                weekHours += ((int32_t)(display.rtcGetEpoch()) - lastLoginInList);
+                            // Add current time to the dayhours and weekhours (because logout is not done yet)
+                            dayHours += ((int32_t)(display.rtcGetEpoch()) - lastLoginInList);
+                            weekHours += ((int32_t)(display.rtcGetEpoch()) - lastLoginInList);
 
-                                // Make string timestamp
-                                createTimeStampFromEpoch(loginTimestampStr, lastLogin);
+                            // Make string timestamp
+                            createTimeStampFromEpoch(loginTimestampStr, lastLogin);
 
-                                // Send the data to the client
-                                client->printf("Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: "
-                                               "%s\r\nLogout: Not Done Yet\r\n",
-                                               dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600,
-                                               weekHours / 60 % 60, weekHours % 60, loginTimestampStr);
-                            }
-                            else
-                            {
-                                // Make string timestamp
-                                createTimeStampFromEpoch(loginTimestampStr, lastLogin);
-                                createTimeStampFromEpoch(logoutTimestampStr, lastLogout);
-                                client->printf(
-                                    "Daily: %02d:%02d:%02d\r\nWeekly: %02d:%02d:%02d\r\nLogin: %s\r\nLogout: %s\r",
-                                    dayHours / 3600, dayHours / 60 % 60, dayHours % 60, weekHours / 3600,
-                                    weekHours / 60 % 60, weekHours % 60, lastLogin != -1 ? loginTimestampStr : "----",
-                                    lastLogout != -1 ? logoutTimestampStr : "----");
-                            }
+                            // Write the login/logout data.
+                            doc["status"] = "ok";
+                            doc["status_desc"] = "loginOnly";
+                            doc["first_login"] = loginTimestampStr;
+                            doc["last_logout"] = "--:--:-- --.--.----.";
+                            sprintf(dailyStr, "%02d:%02d:%02d", dayHours / 3600, dayHours / 60 % 60, dayHours % 60);
+                            sprintf(weeklyStr, "%02d:%02d:%02d", weekHours / 3600, weekHours / 60 % 60, weekHours % 60);
+                            doc["daily"] = dailyStr;
+                            doc["weekly"] = weeklyStr;
                         }
                         else
                         {
-                            // Send error if microSD card can't be found.
-                            client->println("microSD Card access error!");
+                            // Make string timestamp
+                            createTimeStampFromEpoch(loginTimestampStr, lastLogin);
+                            createTimeStampFromEpoch(logoutTimestampStr, lastLogout);
+                            // Write the login/logout data.
+                            doc["status"] = "ok";
+                            doc["status_desc"] = "logout";
+                            doc["first_login"] = loginTimestampStr;
+                            doc["last_logout"] = logoutTimestampStr;
+                            sprintf(dailyStr, "%02d:%02d:%02d", dayHours / 3600, dayHours / 60 % 60, dayHours % 60);
+                            sprintf(weeklyStr, "%02d:%02d:%02d", weekHours / 3600, weekHours / 60 % 60, weekHours % 60);
+                            doc["daily"] = dailyStr;
+                            doc["weekly"] = weeklyStr;
                         }
+                    }
+                    else if (!_lastLogFlag)
+                    {
+                            // Login file is missing.
+                            doc["status"] = "ok";
+                            doc["status_desc"] = "noLoginData";
+                            doc["first_login"] = "--:--:-- --.--.----.";
+                            doc["last_logout"] = "--:--:-- --.--.----.";
+                            doc["daily"] = "--:--:--";
+                            doc["weekly"] = "--:--:--";
                     }
                     else
                     {
-                        // Send error if the wrong ID is sent.
-                        client->println("Wrong API ID!");
+                        // Send error if microSD card can't be found.
+                        doc["status"] = "error";
+                        doc["status_desc"] = "microSdCardFault";
                     }
                 }
                 else
                 {
-                    // Send error message for the wrong API parameter
-                    client->println("Wrong API parameter!");
+                    // Send error if the wrong ID is sent.
+                    doc["status"] = "error";
+                    doc["status_desc"] = "wrongApiId";
                 }
             }
             else
             {
-                // Send error message for the wrong API request
-                client->println("Wrong API request!");
+                // Send error message for the wrong API parameter
+                doc["status"] = "error";
+                doc["status_desc"] = "wrongApiParameter";
             }
         }
         else
         {
             // Send error message for the wrong API request
-            client->println("Wrong API request!");
+            doc["status"] = "error";
+            doc["status_desc"] = "wrongApiId";
         }
+
+        // Send data to the client.
+        String jsonString;
+        serializeJsonPretty(doc, jsonString);
+        client->print("Content-Length: ");
+        client->println(jsonString.length());
+        client->println();
+        client->println(jsonString);
     }
     else
     {
@@ -1440,22 +1157,22 @@ void doServer(WiFiClient *client)
         client->println("<!DOCTYPE html>");
         client->println(" <html>");
         client->println(" <head>");
-        client->println("   <title>Worktime</title>");
+        client->println("   <title>Soldered Time Logger Device</title>");
         client->println("   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
         client->println("   <link rel=\"icon\" href=\"favicon.ico\" type=\"image/ico\">");
         client->println("   <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
         client->println(" </head>");
         client->println(" <body>");
         client->println("  <div class=\"topnav\">");
-        client->println("    <h1>Worktime</h1>");
+        client->println("    <h1>Soldered Time Logger Device</h1>");
         client->println("  </div>");
         client->println("  <div class=\"content\">");
         client->println("    <div class=\"card-grid\">");
         client->println("      <div class=\"card\">");
-        client->println("        <a href=\"/addworker\"> <button>Add worker</button> </a>");
-        client->println("        <a href=\"/remove\"> <button>Remove worker</button> </a>");
-        client->println("        <a href=\"/monthly\"> <button>Monthly review by worker</button></a>");
-        client->println("        <a href=\"/byworker\"> <button>Workers review by month</button> </a>");
+        client->println("        <a href=\"/employee\"> <button>Add employee</button> </a>");
+        client->println("        <a href=\"/remove\"> <button>Remove employee</button> </a>");
+        client->println("        <a href=\"/monthly\"> <button>Monthly review by employee</button></a>");
+        client->println("        <a href=\"/byemployee\"> <button>Employees review by month</button> </a>");
         client->println("      </div>");
         client->println("    </div>");
         client->println("  </div>");

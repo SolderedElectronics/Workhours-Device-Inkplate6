@@ -1,6 +1,10 @@
 # Soldered Time Logger Device
 Soldered Inkplate 6 based time logger device for logging work hours data of employees.
 
+<p>
+<img width="800" src="https://raw.githubusercontent.com/SolderedElectronics/Workhours-Device-Inkplate6/refs/heads/main/extras/images/deviceImage.jpg">
+</p>
+
 ## Features:
 - Storing login and logout times of every employee on microSD card in .cvs format
 - Allows for multiple login / logout in a one day

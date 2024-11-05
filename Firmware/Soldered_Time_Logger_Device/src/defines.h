@@ -45,6 +45,8 @@ static IPAddress secondaryDNS(8, 8, 8, 8);   // Secondary DNS (use google as sec
 // Full list see here: https://worldtimeapi.org/timezones.
 #define API_CLOCK_CONTINENT     "Europe"
 #define API_CLOCK_REGION        "Zagreb"
+// Get the API Key from here: https://timezonedb.com/api
+#define API_KEY_TIME            ""
 
 // Tag for missed logout in the list.
 #define LOGGING_ERROR_STRING "??????????"

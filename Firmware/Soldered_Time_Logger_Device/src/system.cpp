@@ -124,7 +124,7 @@ int fetchTime(Inkplate *_display)
     char _apiUrl[100];
 
     // Create URL for the API Call.
-    sprintf(_apiUrl, "https://worldtimeapi.org/api/timezone/%s/%s", API_CLOCK_CONTINENT, API_CLOCK_REGION);
+    sprintf(_apiUrl, "http://api.timezonedb.com/v2.1/get-time-zone?key=%s&format=json&by=zone&zone=%s/%s", API_KEY_TIME, API_CLOCK_CONTINENT, API_CLOCK_REGION);
 
     // Try to get the JSON.
     _http.begin(_apiUrl);
@@ -145,17 +145,19 @@ int fetchTime(Inkplate *_display)
         if (_err)
             return 0;
 
-        // No entry in JSON called "unixtime"? Return error.
-        if (!_doc.containsKey("unixtime"))
+        // No needed entries in the JSON response? Return error.
+        if ((!_doc.containsKey("status")) && (!_doc.containsKey("timestamp")) && (!_doc.containsKey("gmtOffset")) && (!_doc.containsKey("dst")))
+            return 0;
+
+        // Check if the status is ok.
+        if (strstr(_doc["status"], "OK") == NULL)
             return 0;
 
         // Get the clock!
-        int32_t _epoch = (int32_t)_doc["unixtime"];
-        int32_t _epochTimezoneOffset = (int32_t)_doc["raw_offset"];
-        int32_t _epochDstOffset = (int32_t)_doc["dst_offset"];
+        int32_t _epochLocalTime = (int32_t)_doc["timestamp"];
 
         // Set it on Inkplate RTC.
-        _display->rtcSetEpoch(_epoch + _epochTimezoneOffset + _epochDstOffset);
+        _display->rtcSetEpoch(_epochLocalTime);
         _display->rtcGetRtcData();
     }
     else

@@ -45,9 +45,11 @@ Soldered Inkplate 6 based time logger device for logging work hours data of empl
 - 5V USB Supply
 - 3D printed Case (optional)
 - Stable WiFi connection
+- API Key from https://timezonedb.com/api. It's free!
 
 ## Getting started
 - Download this repo and open -ino file (Arduino, VSCode,...)
+- Add timezonedb API key for time in defined.h under `API_KEY_TIME`. Otherwise, device won't work!
 - Change settings in src/defines.h (if needed)
   - Web Server password in `SECRET_KEY` as well as length of the password in `SECRET_KEY_LEN`
   - Name of each department in `departments`. Must be at least one department!

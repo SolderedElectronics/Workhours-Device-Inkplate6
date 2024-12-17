@@ -17,7 +17,7 @@
 #define DEFAULT_IMAGE_PATH  DEFAULT_FOLDER_NAME "/" DEFAULT_IMAGE_NAME
 
 // All departments. Add if needed. Do not modify alreday added.
-static const char *departments[] = {"Engineering", "Manufacturing", "Operations", "Sales & Marketing", "Warehouse & Purchasing", "Finance"};
+static const char *departments[] = {"Engineering", "Manufacturing", "Operations", "Sales & Marketing", "Warehouse & Purchasing", "Finance", "Customer Support", "Student"};
 static const int numberOfDepartments = sizeof(departments) / sizeof(departments[0]);
 
 // mDNS - Name of the ESP32 on the localhost.

@@ -42,7 +42,7 @@ static IPAddress secondaryDNS(8, 8, 8, 8);   // Secondary DNS (use google as sec
 #define FONT_FORMAT   "opentype"
 
 // API for the clock adjustment.
-// Full list see here: https://worldtimeapi.org/timezones.
+// Full list see here: https://timezonedb.com/references/list-time-zone.
 #define API_CLOCK_CONTINENT     "Europe"
 #define API_CLOCK_REGION        "Zagreb"
 // Get the API Key from here: https://timezonedb.com/api

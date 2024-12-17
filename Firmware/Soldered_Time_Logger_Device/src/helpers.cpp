@@ -2,7 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <sys\time.h>
+//s#include <sys\time.h>
 #include <time.h>
 #include "Inkplate.h"
 #include "defines.h"

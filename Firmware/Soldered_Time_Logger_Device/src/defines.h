@@ -27,7 +27,7 @@ static const int numberOfDepartments = sizeof(departments) / sizeof(departments[
 static char ssid[] = "Soldered-testingPurposes";
 static char pass[] = "Testing443";
 // Set your Static IP address
-static IPAddress localIP(192, 168, 71, 98); // IP address should be set to desired address
+static IPAddress localIP(192, 168, 71, 99); // IP address should be set to desired address
 // Set your Gateway IP address
 // Gateway address (in most cases it's the first address of selected IP addreess subnet)
 static IPAddress gateway(192, 168, 71, 1);

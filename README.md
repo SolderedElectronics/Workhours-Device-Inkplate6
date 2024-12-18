@@ -19,21 +19,7 @@ Soldered Inkplate 6 based time logger device for logging work hours data of empl
 - Automatic clock adjustment through Web API
 - Automatic periodic clock adjustmet
 - WiFi status indicator
-- JSON API for every employee (http://timeloggerdevice.local/api/getweekhours/[tagID])
-```
-{
-  "firstName": "Ivo",
-  "lastName": "Ivic",
-  "tagId": "1234567",
-  "department": "R&D",
-  "status": "ok",
-  "status_desc": "loginOnly",
-  "first_login": "08:55:42 16.09.2024.",
-  "last_logout": "--:--:-- --.--.----.",
-  "daily": "01:39:29",
-  "weekly": "01:39:29"
-}
-```
+- [JSON APIs](README.md?tab=readme-ov-file#api)
 
 ## Requirements:
 - microSD card with loaded data from microSD card folder

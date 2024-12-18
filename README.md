@@ -68,6 +68,8 @@ Soldered Inkplate 6 based time logger device for logging work hours data of empl
 - Also in src/defines.h change IP address settings. Note: secondary DNS IP Address if Google DNS.
 
 ## Connections
+Detail assembly manual can be found [here](Assembly/README.md)
+
 Two additional parts must be connected to the loginh
 ### RFID
 |Soldered Inkplate 6|Soldered 125kHz RFID (UART)|Wire color|
@@ -85,6 +87,53 @@ Also, baud rate switches must be set in next position (to set a baud rate of 576
 
 ### Buzzer
 Connect P1-7 of the GPIO EXPANDER 1 to the (+) of the magnetic buzzer. Other end of the buzzer connect to the ground. To protect GPIO expander pin, connect Schottky Diode parallel to the buzezr, with the anode of the diode connected to the GND.
+
+### API
+As mentioned, this device has API; for getting week and daily hours of selected employee and to get the list of the currently active employees with it's tagID.
+
+- `getweekhours` API
+    - endpoint: `[deviceName|IP address]/api/getweekhours/tagID`
+    - example: `timeloggerdevice.local/api/getweekhours/12345678` or `192.168.71.99/api/getweekhours/12345678`
+    - response:
+       ````
+       {
+           "firstName": "Borna",
+           "lastName": "Biro",
+           "tagId": "13500832",
+           "department": "R&D",
+           "status": "ok",
+           "status_desc": "loginOnly",
+           "first_login": "08:16:39 18.12.2024.",
+           "last_logout": "--:--:-- --.--.----.",
+           "daily": "05:04:24",
+           "weekly": "23:40:07"
+       }
+       ````
+- `getemployeelist` API
+    - endpoint: `[deviceName|IP address]/api/getemployeelist/`
+    - example: `timeloggerdevice.local/api/getemployeelist` or `192.168.71.99/api/getemployeelist`
+    - response:
+       ````
+       {
+           "status": "ok",
+           "timestamp": 1734528352,
+           "employeeNumber": 2,
+           "employeeList": [
+             {
+               "tagID": 12345678,
+               "firstName": "Borna",
+               "lastName": "Biro",
+               "department": "R&D"
+             },
+             {
+               "tagID": 87654321,
+               "firstName": "Ivan",
+               "lastName": "Ivic",
+               "department": "Operations"
+             }
+           ]
+       }
+       ````
 
 ## Notes
 - This is updated version, so files from previous version won't work. Main differences are:

@@ -54,9 +54,9 @@ Soldered Inkplate 6 based time logger device for logging work hours data of empl
 - Also in src/defines.h change IP address settings. Note: secondary DNS IP Address if Google DNS.
 
 ## Connections
-Detail assembly manual can be found [here](Assembly/README.md)
+Detail assembly manual can be found [here](Assembly/README.md).
 
-Two additional parts must be connected to the loginh
+Two additional parts must be connected to the logging device; RFID breakout and buzzer.
 ### RFID
 |Soldered Inkplate 6|Soldered 125kHz RFID (UART)|Wire color|
 |-------------------|---------------------------|----------|

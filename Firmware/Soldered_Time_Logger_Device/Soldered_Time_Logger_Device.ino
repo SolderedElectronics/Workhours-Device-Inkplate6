@@ -1003,7 +1003,7 @@ void doServer(WiFiClient *client)
     else if (strstr(buffer, "/api"))
     {
         // Create static ArduinoJSON document.
-        StaticJsonDocument<256> doc;
+        StaticJsonDocument<4096> doc;
 
         // API link is [IP Address]/api/getWeekHours/[TAGID]
         // Send response (200 OK)
@@ -1015,9 +1015,10 @@ void doServer(WiFiClient *client)
         // Check what kind of data is needed (added for future add-ons).
 
         // Get the start of the HTTP GET Request for the Weekly work hours.
-        char *startStr = strstr(buffer, "/getweekhours");
-        if (startStr != NULL)
+        if (strstr(buffer, "/getweekhours") != NULL)
         {
+            char *startStr = strstr(buffer, "/getweekhours");
+
             // If the start is found, get the TAG ID
             unsigned long long tagID;
 
@@ -1054,6 +1055,9 @@ void doServer(WiFiClient *client)
                     // Get the last log data (to check if the logout is done).
                     int _lastLogFlag = logger.findLastLog(employee, &lastLoginInList, &lastLogoutInList);
 
+                    Serial.printf("[DEBUG INFO] Weekhours: %d, dayHours: %d, _lastLogFlag: %d\r\n", weekHours, dayHours, _lastLogFlag);
+                    Serial.flush();
+
                     // _lastLogFlag = 0 -> microSD card ok, but no login data.
                     // _lastLogFlag = 1 -> microSD card ok & login file has been found.
                     // _lastLogFlag = -1 -> microSD card error.
@@ -1085,7 +1089,7 @@ void doServer(WiFiClient *client)
                             doc["daily"] = dailyStr;
                             doc["weekly"] = weeklyStr;
                         }
-                        else
+                        else if ((weekHours > 0) && (dayHours > 0))
                         {
                             // Make string timestamp
                             createTimeStampFromEpoch(loginTimestampStr, lastLogin);
@@ -1099,6 +1103,31 @@ void doServer(WiFiClient *client)
                             sprintf(weeklyStr, "%02d:%02d:%02d", weekHours / 3600, weekHours / 60 % 60, weekHours % 60);
                             doc["daily"] = dailyStr;
                             doc["weekly"] = weeklyStr;
+                        }
+                        else if ((weekHours > 0) && (dayHours == 0))
+                        {
+                            // Make string timestamp, but only for weekly.
+                            doc["status"] = "ok";
+                            doc["status_desc"] = "noDailyLogin";
+                            doc["first_login"] = "--:--:-- --.--.----.";
+                            doc["last_logout"] = "--:--:-- --.--.----.";
+                            sprintf(weeklyStr, "%02d:%02d:%02d", weekHours / 3600, weekHours / 60 % 60, weekHours % 60);
+                            doc["daily"] = "00:00:00";
+                            doc["weekly"] = weeklyStr;
+                        }
+                        else if ((weekHours == 0) && (dayHours == 0))
+                        {
+                            // No weekly nor daily data yet.
+                            doc["status"] = "ok";
+                            doc["status_desc"] = "noWeeklyLogin";
+                            doc["first_login"] = "--:--:-- --.--.----.";
+                            doc["last_logout"] = "--:--:-- --.--.----.";
+                            doc["daily"] = "00:00:00";
+                            doc["weekly"] = "00:00:00";
+                        }
+                        else
+                        {
+                            doc["message"] = "woops, something's wrong! heh...";
                         }
                     }
                     else if (!_lastLogFlag)
@@ -1130,6 +1159,29 @@ void doServer(WiFiClient *client)
                 // Send error message for the wrong API parameter
                 doc["status"] = "error";
                 doc["status_desc"] = "wrongApiParameter";
+            }
+        }
+        else if (strstr(buffer, "/getemployeelist"))
+        {
+            // Store data for the JSON header.
+            uint32_t _epochTimestamp = display.rtcGetEpoch();
+            int _employees = myList.numberOfElements();
+
+            // Create header of the JSON response.
+            doc["status"] = "ok";
+            doc["timestamp"] = _epochTimestamp;
+            doc["employeeNumber"] = _employees;
+
+            for (int i = 0; i < _employees; i++)
+            {
+                // Get basic data of employee.
+                struct employeeData _myEmployeeData;
+                memcpy(&_myEmployeeData, myList.getEmployee(i), sizeof(_myEmployeeData));
+
+                doc["employeeList"][i]["tagID"] = _myEmployeeData.ID;
+                doc["employeeList"][i]["firstName"] = _myEmployeeData.firstName;
+                doc["employeeList"][i]["lastName"] = _myEmployeeData.lastName;
+                doc["employeeList"][i]["department"] = _myEmployeeData.department;
             }
         }
         else

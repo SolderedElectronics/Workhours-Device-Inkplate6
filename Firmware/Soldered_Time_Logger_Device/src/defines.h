@@ -17,7 +17,7 @@
 #define DEFAULT_IMAGE_PATH  DEFAULT_FOLDER_NAME "/" DEFAULT_IMAGE_NAME
 
 // All departments. Add if needed. Do not modify alreday added.
-static const char *departments[] = {"Engineering", "Manufacturing", "Operations", "Sales & Marketing", "Warehouse & Purchasing", "Finance"};
+static const char *departments[] = {"Engineering", "Manufacturing", "Operations", "Sales & Marketing", "Warehouse & Purchasing", "Finance", "Customer Support", "Student"};
 static const int numberOfDepartments = sizeof(departments) / sizeof(departments[0]);
 
 // mDNS - Name of the ESP32 on the localhost.
@@ -27,7 +27,7 @@ static const int numberOfDepartments = sizeof(departments) / sizeof(departments[
 static char ssid[] = "Soldered-testingPurposes";
 static char pass[] = "Testing443";
 // Set your Static IP address
-static IPAddress localIP(192, 168, 71, 98); // IP address should be set to desired address
+static IPAddress localIP(192, 168, 71, 99); // IP address should be set to desired address
 // Set your Gateway IP address
 // Gateway address (in most cases it's the first address of selected IP addreess subnet)
 static IPAddress gateway(192, 168, 71, 1);
@@ -42,7 +42,7 @@ static IPAddress secondaryDNS(8, 8, 8, 8);   // Secondary DNS (use google as sec
 #define FONT_FORMAT   "opentype"
 
 // API for the clock adjustment.
-// Full list see here: https://worldtimeapi.org/timezones.
+// Full list see here: https://timezonedb.com/references/list-time-zone.
 #define API_CLOCK_CONTINENT     "Europe"
 #define API_CLOCK_REGION        "Zagreb"
 // Get the API Key from here: https://timezonedb.com/api
